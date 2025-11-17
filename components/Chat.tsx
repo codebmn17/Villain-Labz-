@@ -1,24 +1,72 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../types';
 import { sendMessageToAI, executeFunctionCall } from '../services/geminiService';
+import { Content } from '@google/genai';
 
 interface ChatProps {
   isDjActive: boolean;
 }
 
+const UI_HISTORY_KEY = 'villain_labz_ui_history';
+const AI_HISTORY_KEY = 'villain_labz_ai_history';
+
+
 const Chat: React.FC<ChatProps> = ({ isDjActive }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { sender: 'ai', text: "I'm your creative assistant. Ask me for lyric ideas, song structures, or anything else!" }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    try {
+      const stored = localStorage.getItem(UI_HISTORY_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error("Failed to load UI history:", e);
+      return [];
+    }
+  });
+
+  const [aiHistory, setAiHistory] = useState<Content[]>(() => {
+     try {
+      const stored = localStorage.getItem(AI_HISTORY_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      console.error("Failed to load AI history:", e);
+      return [];
+    }
+  });
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (isDjActive) {
-       setMessages(prev => [...prev, { sender: 'ai', text: "DJ is active. I can now write and execute code to generate audio. Try asking me to 'create a kick drum sound'."}]);
+    if (messages.length === 0) {
+      setMessages([{ sender: 'ai', text: "I'm your creative assistant. Ask me for lyric ideas, song structures, or anything else!" }]);
     }
-  }, [isDjActive]);
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(UI_HISTORY_KEY, JSON.stringify(messages));
+    } catch (e) {
+      console.error("Failed to save UI history", e);
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(aiHistory));
+    } catch (e) {
+      console.error("Failed to save AI history", e);
+    }
+  }, [aiHistory]);
+
+
+  useEffect(() => {
+    if (isDjActive) {
+       const lastMessage = messages[messages.length - 1];
+       if (!lastMessage || !lastMessage.text.startsWith("DJ is active.")) {
+        setMessages(prev => [...prev, { sender: 'ai', text: "DJ is active. I can now write and execute code to generate audio. Try asking me to 'create a kick drum sound'."}]);
+       }
+    }
+  }, [isDjActive, messages]);
 
 
   const scrollToBottom = () => {
@@ -38,8 +86,9 @@ const Chat: React.FC<ChatProps> = ({ isDjActive }) => {
 
     try {
       // First call to the AI with the user's text
-      let response = await sendMessageToAI(currentInput, isDjActive);
+      let { response, newHistory } = await sendMessageToAI(currentInput, isDjActive, aiHistory);
       let functionCalls = response.functionCalls;
+      setAiHistory(newHistory); // Update history after first call
 
       if (functionCalls && functionCalls.length > 0) {
         setMessages(prev => [...prev, { sender: 'ai', text: `DJ is writing code for: ${functionCalls[0].name}...` }]);
@@ -50,7 +99,9 @@ const Chat: React.FC<ChatProps> = ({ isDjActive }) => {
         setMessages(prev => [...prev, { sender: 'ai', text: executionResult }]);
 
         // Send the tool response back to the AI to continue the conversation
-        response = await sendMessageToAI(toolResponse, isDjActive);
+        const finalResult = await sendMessageToAI(toolResponse, isDjActive, newHistory);
+        response = finalResult.response;
+        setAiHistory(finalResult.newHistory);
       }
 
       // The final response from the AI after the tool call (or the initial response if no tool call)

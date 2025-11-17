@@ -58,13 +58,13 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
 
     setError(null);
     setIsGenerating(true);
+    setGenerationStatus('');
 
     try {
         let lyricsToGenerate = lyrics;
 
         if (studioMode === StudioMode.Cover) {
             setGenerationStatus('Researching song via web...');
-            await new Promise(res => setTimeout(res, 1000));
             
             const fetchedLyrics = shouldAdaptLyrics
                 ? await researchAndAdaptSong(originalTitle, originalArtist, style)
@@ -78,11 +78,11 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
         }
 
         setGenerationStatus('Generating vocals & instrumentals...');
-        await new Promise(res => setTimeout(res, 1000));
         
         const audioUrl = await elevenLabsGenerate(lyricsToGenerate, elevenLabsKey);
         
         const newTrack: AudioPlaylistItem = {
+          id: Date.now().toString(),
           src: audioUrl,
           title: studioMode === StudioMode.Cover ? originalTitle : `Original Track - ${style.substring(0, 20)}`,
           artist: studioMode === StudioMode.Cover ? originalArtist : 'Villain Labz',
@@ -90,7 +90,18 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
         setGeneratedTracks([...generatedTracks, newTrack]);
 
     } catch (e) {
-        setError('Failed to generate audio. Please try again.');
+        console.error("Generation Error:", e);
+        if (e instanceof Error) {
+            if (e.message.includes('ELEVENLABS_API_KEY_REQUIRED')) {
+                setError('An ElevenLabs API key is required for longer audio generation. Please add one in the Model Manager.');
+            } else if (e.message.includes('research')) {
+                setError('Failed to research the song. The web might be unreachable or the song could not be found.');
+            } else {
+                 setError('Failed to generate audio. Please check your inputs and try again.');
+            }
+        } else {
+            setError('An unknown error occurred. Please try again.');
+        }
     } finally {
         setIsGenerating(false);
         setGenerationStatus('');
@@ -152,7 +163,17 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
   };
 
   return (
-    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in">
+    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in relative">
+      {isGenerating && (
+        <div className="absolute inset-0 bg-gray-800 bg-opacity-90 backdrop-blur-sm flex flex-col items-center justify-center rounded-xl z-10 transition-opacity duration-300 animate-fade-in">
+          <div className="text-center p-4">
+            <div className="w-20 h-20 border-8 border-dashed rounded-full animate-spin border-purple-500 mx-auto"></div>
+            <h3 className="mt-6 text-2xl font-bold text-purple-300 animate-pulse">{generationStatus || 'Initializing Generation...'}</h3>
+            <p className="mt-2 text-gray-400">This may take a few moments. Please don't close the tab.</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-3xl font-bold text-purple-400 mb-2">Studio</h2>
@@ -286,13 +307,6 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
           </button>
         </div>
       </div>
-      
-      {isGenerating && (
-        <div className="mt-6 text-center">
-            <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-purple-400 mx-auto"></div>
-            <p className="mt-4 text-gray-300 font-semibold animate-pulse">{generationStatus}</p>
-        </div>
-      )}
 
       {generatedTracks.length > 0 && !isGenerating && (
         <div className="mt-8 p-3 bg-gray-700 rounded-lg animate-fade-in">

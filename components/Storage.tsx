@@ -1,12 +1,14 @@
 import React from 'react';
 import { AudioPlaylistItem } from '../types';
 import AudioPlayer from './AudioPlayer';
+import { TrashIcon } from './icons/TrashIcon';
 
 interface StorageProps {
   generatedTracks: AudioPlaylistItem[];
+  setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
 }
 
-const Storage: React.FC<StorageProps> = ({ generatedTracks }) => {
+const Storage: React.FC<StorageProps> = ({ generatedTracks, setGeneratedTracks }) => {
 
   const handleDownload = (track: AudioPlaylistItem, format: 'wav' | 'mp3') => {
     const link = document.createElement('a');
@@ -16,6 +18,18 @@ const Storage: React.FC<StorageProps> = ({ generatedTracks }) => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDelete = (trackId: string) => {
+    if (window.confirm("Are you sure you want to delete this track? It will be removed permanently.")) {
+      setGeneratedTracks(generatedTracks.filter(track => track.id !== trackId));
+    }
+  };
+  
+  const handleClearAll = () => {
+    if (window.confirm("Are you sure you want to delete ALL tracks? This action cannot be undone.")) {
+      setGeneratedTracks([]);
+    }
   };
 
   return (
@@ -36,10 +50,21 @@ const Storage: React.FC<StorageProps> = ({ generatedTracks }) => {
           </div>
 
           <div>
-            <h3 className="text-xl font-semibold text-purple-300 mb-4">Track Library</h3>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-semibold text-purple-300">Track Library ({generatedTracks.length})</h3>
+              {generatedTracks.length > 0 && (
+                  <button 
+                    onClick={handleClearAll}
+                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 rounded-lg text-xs transition-colors flex items-center"
+                  >
+                      <TrashIcon className="h-4 w-4 mr-1" />
+                      Clear All
+                  </button>
+              )}
+            </div>
             <ul className="space-y-3">
-              {generatedTracks.map((track, index) => (
-                <li key={`${track.src}-${index}`} className="bg-gray-700 p-3 rounded-lg flex items-center justify-between transition-all duration-300">
+              {generatedTracks.map((track) => (
+                <li key={track.id} className="bg-gray-700 p-3 rounded-lg flex items-center justify-between transition-all duration-300">
                   <div className="flex-1 overflow-hidden">
                     <p className="font-semibold text-white truncate" title={track.title}>{track.title}</p>
                     <p className="text-sm text-gray-400">{track.artist}</p>
@@ -48,14 +73,23 @@ const Storage: React.FC<StorageProps> = ({ generatedTracks }) => {
                     <button
                       onClick={() => handleDownload(track, 'wav')}
                       className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-xs transition-colors"
+                      aria-label={`Export ${track.title} as WAV`}
                     >
-                      WAV
+                      Export WAV
                     </button>
                     <button
                       onClick={() => handleDownload(track, 'mp3')}
                       className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-xs transition-colors"
+                      aria-label={`Export ${track.title} as MP3`}
                     >
-                      MP3
+                      Export MP3
+                    </button>
+                    <button
+                      onClick={() => handleDelete(track.id)}
+                      className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-full hover:bg-gray-600"
+                      aria-label={`Delete ${track.title}`}
+                    >
+                      <TrashIcon />
                     </button>
                   </div>
                 </li>

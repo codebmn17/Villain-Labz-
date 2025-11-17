@@ -50,7 +50,7 @@ const App: React.FC = () => {
           />
         );
       case AppView.Storage:
-        return <Storage generatedTracks={generatedTracks} />;
+        return <Storage generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
       case AppView.SpotifyConnect:
         return <SpotifyConnect />;
       default:

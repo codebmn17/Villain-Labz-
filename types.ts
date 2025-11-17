@@ -25,6 +25,7 @@ export interface ChatMessage {
 }
 
 export interface AudioPlaylistItem {
+  id: string;
   src: string;
   title: string;
   artist: string;
