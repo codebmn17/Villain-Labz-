@@ -111,6 +111,23 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
     }
   };
 
+  const handleDownload = (format: 'wav' | 'mp3') => {
+    if (!generatedAudioUrl) {
+      setError("No audio to download.");
+      return;
+    }
+    
+    // In a real app, converting to MP3 would require a client-side library.
+    // For this demo, we'll download the original WAV blob with the chosen file extension.
+    const link = document.createElement('a');
+    link.href = generatedAudioUrl;
+    link.download = `villain-labz-track-${Date.now()}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
   const ModeButton: React.FC<{mode: StudioMode, label: string}> = ({mode, label}) => (
       <button 
         onClick={() => setStudioMode(mode)}
@@ -250,6 +267,24 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
             <div className="flex-1">
                 <audio ref={audioRef} src={generatedAudioUrl} controls className="w-full"/>
             </div>
+          </div>
+          <div className="mt-4 pt-4 border-t border-gray-600">
+            <h4 className="text-md font-semibold mb-2 text-gray-300">Export Options</h4>
+            <div className="flex space-x-3">
+                <button 
+                    onClick={() => handleDownload('wav')}
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
+                >
+                    Download WAV
+                </button>
+                <button 
+                    onClick={() => handleDownload('mp3')}
+                    className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
+                >
+                    Download MP3
+                </button>
+            </div>
+            <p className="text-xs text-gray-500 mt-2">Note: MP3 conversion is simulated. The downloaded file will be in WAV format.</p>
           </div>
         </div>
       )}
