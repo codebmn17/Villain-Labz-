@@ -4,8 +4,9 @@ import VoiceLab from './components/VoiceLab';
 import Studio from './components/Studio';
 import Chat from './components/Chat';
 import ModelManager from './components/ModelManager';
-import { AppView, ClonedVoice } from './types';
+import { AppView, ClonedVoice, AudioPlaylistItem } from './types';
 import SpotifyConnect from './components/SpotifyConnect';
+import Storage from './components/Storage';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
@@ -14,6 +15,7 @@ const App: React.FC = () => {
   const [customModel, setCustomModel] = useState<File | null>(null);
   const [isDjActive, setIsDjActive] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -33,7 +35,7 @@ const App: React.FC = () => {
       case AppView.VoiceLab:
         return <VoiceLab setClonedVoices={setClonedVoices} clonedVoices={clonedVoices} />;
       case AppView.Studio:
-        return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} />;
+        return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
       case AppView.Chat:
         return <Chat isDjActive={isDjActive} />;
       case AppView.ModelManager:
@@ -47,10 +49,12 @@ const App: React.FC = () => {
             setIsDjActive={setIsDjActive}
           />
         );
+      case AppView.Storage:
+        return <Storage generatedTracks={generatedTracks} />;
       case AppView.SpotifyConnect:
         return <SpotifyConnect />;
       default:
-        return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} />;
+        return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
     }
   };
 

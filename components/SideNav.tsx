@@ -5,6 +5,7 @@ import { MusicIcon } from './icons/MusicIcon';
 import { ChatIcon } from './icons/ChatIcon';
 import { CogIcon } from './icons/CogIcon';
 import { SpotifyIcon } from './icons/SpotifyIcon';
+import { StorageIcon } from './icons/StorageIcon';
 
 interface SideNavProps {
   currentView: AppView;
@@ -51,6 +52,7 @@ const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView, isOnline
           <li><NavItem view={AppView.Studio} currentView={currentView} setCurrentView={setCurrentView} icon={<MusicIcon />} label="Studio" /></li>
           <li><NavItem view={AppView.Chat} currentView={currentView} setCurrentView={setCurrentView} icon={<ChatIcon />} label="AI Chat" /></li>
           <li><NavItem view={AppView.ModelManager} currentView={currentView} setCurrentView={setCurrentView} icon={<CogIcon />} label="Models" /></li>
+          <li><NavItem view={AppView.Storage} currentView={currentView} setCurrentView={setCurrentView} icon={<StorageIcon />} label="Storage" /></li>
           <li><NavItem view={AppView.SpotifyConnect} currentView={currentView} setCurrentView={setCurrentView} icon={<SpotifyIcon />} label="Connect" /></li>
         </ul>
       </div>

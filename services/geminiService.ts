@@ -66,7 +66,8 @@ export const sendMessageToAI = async (
     // For a stateful chat, we just send the next part of the conversation.
     // The `chat` object manages the full history.
     // When sending a FunctionResponsePart, it must be in an array.
-    const result = await chatInstance.sendMessage(typeof message === 'string' ? { message } : { message: [message] });
+    // Based on the type error, `FunctionResponsePart` is the unwrapped object, so we wrap it here.
+    const result = await chatInstance.sendMessage(typeof message === 'string' ? { message } : { message: [{ functionResponse: message }] });
 
     return result;
   } catch (error) {
@@ -99,12 +100,10 @@ export const executeFunctionCall = async (functionCall: FunctionCall): Promise<{
         executionResult = `Error: Unknown function call: ${name}`;
     }
 
-    // Fix: `FunctionResponsePart` must be an object with a `functionResponse` key.
+    // Fix: The type error indicates that `FunctionResponsePart` is the unwrapped object.
     const toolResponse: FunctionResponsePart = {
-        functionResponse: {
-            name,
-            response: { result },
-        }
+        name,
+        response: { result },
     };
 
     return {

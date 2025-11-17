@@ -2,15 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { researchAndAdaptSong, findSongLyrics } from '../services/geminiService';
 import { UploadIcon } from './icons/UploadIcon';
-import { ClonedVoice, StudioMode } from '../types';
+import { ClonedVoice, StudioMode, AudioPlaylistItem } from '../types';
 import AudioPlayer from './AudioPlayer';
 
 interface StudioProps {
   clonedVoices: ClonedVoice[];
   elevenLabsKey: string;
+  generatedTracks: AudioPlaylistItem[];
+  setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
 }
 
-const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
+const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedTracks, setGeneratedTracks }) => {
   const [studioMode, setStudioMode] = useState<StudioMode>(StudioMode.Original);
   const [lyrics, setLyrics] = useState('');
   const [style, setStyle] = useState('Dark Synthwave with heavy bass');
@@ -22,7 +24,6 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
-  const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -57,7 +58,6 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
 
     setError(null);
     setIsGenerating(true);
-    setGeneratedAudioUrl(null);
 
     try {
         let lyricsToGenerate = lyrics;
@@ -81,7 +81,13 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
         await new Promise(res => setTimeout(res, 1000));
         
         const audioUrl = await elevenLabsGenerate(lyricsToGenerate, elevenLabsKey);
-        setGeneratedAudioUrl(audioUrl);
+        
+        const newTrack: AudioPlaylistItem = {
+          src: audioUrl,
+          title: studioMode === StudioMode.Cover ? originalTitle : `Original Track - ${style.substring(0, 20)}`,
+          artist: studioMode === StudioMode.Cover ? originalArtist : 'Villain Labz',
+        };
+        setGeneratedTracks([...generatedTracks, newTrack]);
 
     } catch (e) {
         setError('Failed to generate audio. Please try again.');
@@ -89,20 +95,6 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
         setIsGenerating(false);
         setGenerationStatus('');
     }
-  };
-
-  const handleDownload = (format: 'wav' | 'mp3') => {
-    if (!generatedAudioUrl) {
-      setError("No audio to download.");
-      return;
-    }
-    
-    const link = document.createElement('a');
-    link.href = generatedAudioUrl;
-    link.download = `villain-labz-track-${Date.now()}.${format}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
   
   const handleLyricsFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -302,28 +294,10 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
         </div>
       )}
 
-      {generatedAudioUrl && !isGenerating && (
+      {generatedTracks.length > 0 && !isGenerating && (
         <div className="mt-8 p-3 bg-gray-700 rounded-lg animate-fade-in">
-          <h3 className="text-lg font-semibold mb-3">Generated Track</h3>
-          <AudioPlayer src={generatedAudioUrl} />
-          <div className="mt-4 pt-4 border-t border-gray-600">
-            <h4 className="text-md font-semibold mb-2 text-gray-300">Export Options</h4>
-            <div className="flex space-x-3">
-                <button 
-                    onClick={() => handleDownload('wav')}
-                    className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
-                >
-                    Download WAV
-                </button>
-                <button 
-                    onClick={() => handleDownload('mp3')}
-                    className="bg-gray-600 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
-                >
-                    Download MP3
-                </button>
-            </div>
-            <p className="text-xs text-gray-500 mt-2">Note: MP3 conversion is simulated. The downloaded file will be in WAV format.</p>
-          </div>
+          <h3 className="text-lg font-semibold mb-3">Latest Generated Track</h3>
+          <AudioPlayer playlist={generatedTracks} />
         </div>
       )}
     </div>

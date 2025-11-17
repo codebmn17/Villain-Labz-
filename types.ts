@@ -4,6 +4,7 @@ export enum AppView {
   Chat = 'CHAT',
   ModelManager = 'MODEL_MANAGER',
   SpotifyConnect = 'SPOTIFY_CONNECT',
+  Storage = 'STORAGE',
 }
 
 export enum StudioMode {
@@ -21,4 +22,10 @@ export interface ClonedVoice {
 export interface ChatMessage {
   sender: 'user' | 'ai';
   text: string;
+}
+
+export interface AudioPlaylistItem {
+  src: string;
+  title: string;
+  artist: string;
 }
