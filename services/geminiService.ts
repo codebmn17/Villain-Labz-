@@ -1,24 +1,8 @@
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
-import { GoogleGenAI, Chat, FunctionDeclaration, Type, GenerateContentResponse, FunctionCall, FunctionResponse, Content } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content } from "@google/genai";
+import { aiTools } from './aiTools';
 
 let ai: GoogleGenAI | null = null;
-
-// Tool definition for the AI
-const generateWebAudioCode: FunctionDeclaration = {
-    name: 'generateWebAudioCode',
-    description: "Generates and executes JavaScript code using the Web Audio API to create a sound or beat. Call this when the user asks to create a sound, program a beat, or generate an audio effect. The code should create an AudioContext, set up nodes (like Oscillator, Gain, etc.), connect them, and play a sound. The code must be self-contained and executable in a browser environment. It must not reference any external variables. The function should return a string describing the outcome (e.g., 'Kick drum sound played successfully').",
-    parameters: {
-        type: Type.OBJECT,
-        properties: {
-            code: {
-                type: Type.STRING,
-                description: "The JavaScript code to execute. For example: `const audioCtx = new (window.AudioContext || window.webkitAudioContext)(); const oscillator = audioCtx.createOscillator(); oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); oscillator.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 1); return 'Sine wave at 440Hz played for 1 second.';`",
-            },
-        },
-        required: ['code'],
-    },
-};
-
 
 const initializeAI = () => {
   if (!process.env.API_KEY) {
@@ -32,33 +16,32 @@ const initializeAI = () => {
   return ai;
 }
 
-const createChat = (isDjActive: boolean, history: Content[]): Chat => {
+const createChat = (history: Content[]): Chat => {
     const aiInstance = initializeAI();
     
-    const systemInstruction = isDjActive
-        ? 'You are DJ, a creative and autonomous music AI. You can write and execute code to generate sounds and beats. When asked to create audio, use your `generateWebAudioCode` tool. Be concise and helpful.'
-        : 'You are a creative assistant for a musician. Be inspiring, helpful, and concise. Provide ideas for lyrics, song structures, chord progressions, and music styles. Use markdown for formatting.';
+    const systemInstruction = `You are a powerful and creative AI assistant integrated into a music production application called Villain Labz. You have a comprehensive set of tools to control the application. You can generate original music and cover songs, navigate between views, manage cloned voices and generated tracks, and even program sounds directly with the Web Audio API (DJ Mode). Be proactive, helpful, and guide the user on how to use your capabilities.`;
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',
         history,
         config: {
             systemInstruction,
-            tools: isDjActive ? [{ functionDeclarations: [generateWebAudioCode] }] : undefined,
+            tools: [{ functionDeclarations: aiTools }],
         },
     });
 };
 
-
 export const sendMessageToAI = async (
-  message: string | FunctionResponse,
-  isDjActive: boolean,
+  message: string | FunctionResponse[],
   history: Content[],
 ): Promise<{ response: GenerateContentResponse, newHistory: Content[] }> => {
   try {
-    const chatInstance = createChat(isDjActive, history);
+    const chatInstance = createChat(history);
+    
+    const messageToSend = typeof message === 'string' 
+      ? { message } 
+      : { message: message.map(fr => ({ functionResponse: fr })) };
 
-    const messageToSend = typeof message === 'string' ? { message } : { message: [{ functionResponse: message }] };
     const result = await chatInstance.sendMessage(messageToSend);
     const newHistory = await chatInstance.getHistory();
 
@@ -68,40 +51,6 @@ export const sendMessageToAI = async (
     // Re-throw the error to be handled by the UI layer, instead of returning an incomplete response object.
     throw error;
   }
-};
-
-
-export const executeFunctionCall = async (functionCall: FunctionCall): Promise<{toolResponse: FunctionResponse, executionResult: string}> => {
-    const { name, args } = functionCall;
-    let result: any;
-    let executionResult = '';
-
-    if (name === 'generateWebAudioCode') {
-        try {
-            // new Function() is safer than eval()
-            const func = new Function(String(args.code));
-            result = func();
-            executionResult = `Code executed successfully. AI response: "${String(result)}"`;
-        } catch (e) {
-            console.error("Error executing generated code:", e);
-            result = { error: (e as Error).message };
-            executionResult = `Error executing code: ${(e as Error).message}`;
-        }
-    } else {
-        result = { error: `Unknown function call: ${name}` };
-        executionResult = `Error: Unknown function call: ${name}`;
-    }
-
-    // @google/genai-sdk: The toolResponse object must conform to the "FunctionResponse" type.
-    const toolResponse: FunctionResponse = {
-        name,
-        response: { result },
-    };
-
-    return {
-        toolResponse,
-        executionResult
-    };
 };
 
 

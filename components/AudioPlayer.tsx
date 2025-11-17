@@ -4,11 +4,23 @@ import { StopIcon } from './icons/StopIcon';
 import { VolumeIcon } from './icons/VolumeIcon';
 import { NextIcon } from './icons/NextIcon';
 import { PrevIcon } from './icons/PrevIcon';
+import { EqIcon } from './icons/EqIcon';
 import { AudioPlaylistItem } from '../types';
 
 interface AudioPlayerProps {
   playlist: AudioPlaylistItem[];
 }
+
+const EQ_FREQUENCIES = [60, 310, 1000, 6000, 16000]; // 5-band EQ
+const EQ_PRESETS: { [name: string]: number[] } = {
+    'Flat': [0, 0, 0, 0, 0],
+    'Bass Boost': [6, 4, 0, -2, -3],
+    'Vocal Booster': [-2, -1, 3, 4, 2],
+    'Treble Boost': [-2, -1, 0, 4, 6],
+    'Rock': [5, 2, -2, 3, 4],
+    'Pop': [-1, 2, 3, 2, -1],
+};
+
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
@@ -19,7 +31,15 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [lastVolume, setLastVolume] = useState(1);
 
+  // EQ State
+  const [isEqVisible, setIsEqVisible] = useState(false);
+  const [eqGains, setEqGains] = useState<number[]>(EQ_PRESETS['Flat']);
+  const [activePreset, setActivePreset] = useState('Flat');
+
   const audioRef = useRef<HTMLAudioElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const filtersRef = useRef<BiquadFilterNode[]>([]);
   const currentTrack = playlist?.[currentTrackIndex];
 
   // Reset to first track and auto-play when playlist changes
@@ -72,7 +92,49 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
     }
   }, [volume, isMuted]);
   
+  // Update EQ filter gains when state changes
+  useEffect(() => {
+    if (filtersRef.current.length > 0) {
+        eqGains.forEach((gain, index) => {
+            if (filtersRef.current[index]) {
+                filtersRef.current[index].gain.value = gain;
+            }
+        });
+    }
+  }, [eqGains]);
+
+  const initAudioContext = () => {
+    if (!audioCtxRef.current && audioRef.current) {
+        const context = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = context.createMediaElementSource(audioRef.current);
+        
+        const newFilters = EQ_FREQUENCIES.map((freq, i) => {
+            const filter = context.createBiquadFilter();
+            filter.type = i === 0 ? 'lowshelf' : i === EQ_FREQUENCIES.length - 1 ? 'highshelf' : 'peaking';
+            filter.frequency.value = freq;
+            filter.gain.value = eqGains[i];
+            filter.Q.value = 1;
+            return filter;
+        });
+
+        // Chain the audio source through the filters to the destination
+        source.connect(newFilters[0]);
+        for (let i = 0; i < newFilters.length - 1; i++) {
+            newFilters[i].connect(newFilters[i + 1]);
+        }
+        newFilters[newFilters.length - 1].connect(context.destination);
+
+        audioCtxRef.current = context;
+        sourceNodeRef.current = source;
+        filtersRef.current = newFilters;
+    }
+  };
+
+
   const togglePlayPause = () => {
+    if (!audioCtxRef.current) {
+        initAudioContext();
+    }
     const audio = audioRef.current;
     if (!audio) return;
     if (isPlaying) {
@@ -121,6 +183,20 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
       }
   };
 
+  const handleEqGainChange = (index: number, value: number) => {
+    const newGains = [...eqGains];
+    newGains[index] = value;
+    setEqGains(newGains);
+    setActivePreset('Custom'); // User is making a custom adjustment
+  };
+
+  const handlePresetChange = (presetName: string) => {
+    if (EQ_PRESETS[presetName]) {
+        setEqGains(EQ_PRESETS[presetName]);
+        setActivePreset(presetName);
+    }
+  };
+
   const formatTime = (time: number) => {
     if (isNaN(time) || time <= 0) return '00:00';
     const mins = Math.floor(time / 60);
@@ -133,7 +209,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
 
   return (
     <div className="bg-gray-900/50 p-4 rounded-lg w-full flex flex-col space-y-3">
-      <audio ref={audioRef} preload="metadata"></audio>
+      <audio ref={audioRef} preload="metadata" crossOrigin="anonymous"></audio>
       
       <div className="flex items-center space-x-4">
         <div className="flex items-center space-x-2">
@@ -153,7 +229,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
             <p className="text-gray-400 text-sm truncate" title={currentTrack.artist}>{currentTrack.artist}</p>
         </div>
 
-        <div className="flex items-center space-x-2 w-1/3">
+        <div className="hidden lg:flex items-center space-x-2 w-1/3">
             <span className="text-xs text-gray-400 font-mono w-12 text-center">{formatTime(currentTime)}</span>
             <div className="relative w-full h-2 flex items-center group">
                 <input
@@ -173,8 +249,46 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
                 type="range" min="0" max="1" step="0.01" value={isMuted ? 0 : volume} onChange={handleVolumeChange}
                 className="w-24 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
             />
+            <button onClick={() => setIsEqVisible(!isEqVisible)} className={`p-1 rounded-full transition ${isEqVisible ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}>
+                <EqIcon />
+            </button>
         </div>
       </div>
+       {isEqVisible && (
+        <div className="p-3 bg-gray-800 rounded-md animate-fade-in mt-2 space-y-4">
+            <div className="max-w-xs">
+                <label htmlFor="eq-preset" className="block text-sm font-medium text-gray-300 mb-1">EQ Preset</label>
+                <select
+                    id="eq-preset"
+                    value={activePreset}
+                    onChange={(e) => handlePresetChange(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded-md p-1 text-sm text-gray-100 focus:ring-2 focus:ring-purple-500"
+                >
+                    <option value="Custom" disabled>Custom</option>
+                    {Object.keys(EQ_PRESETS).map(name => (
+                        <option key={name} value={name}>{name}</option>
+                    ))}
+                </select>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-6 gap-y-3">
+                {EQ_FREQUENCIES.map((freq, index) => (
+                    <div key={freq} className="flex flex-col items-center">
+                        <label className="text-xs font-bold text-gray-400 mb-2">{freq < 1000 ? `${freq}Hz` : `${freq/1000}kHz`}</label>
+                        <input
+                            type="range"
+                            min="-12"
+                            max="12"
+                            step="0.1"
+                            value={eqGains[index]}
+                            onChange={(e) => handleEqGainChange(index, parseFloat(e.target.value))}
+                            className="w-full h-1.5 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                        />
+                        <span className="text-xs text-purple-400 mt-1 font-mono">{eqGains[index].toFixed(1)} dB</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
     </div>
   );
 };

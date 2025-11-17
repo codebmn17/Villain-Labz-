@@ -8,7 +8,6 @@ interface ModelManagerProps {
   customModel: File | null;
   setCustomModel: (file: File | null) => void;
   isDjActive: boolean;
-  setIsDjActive: (isActive: boolean) => void;
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ 
@@ -17,7 +16,6 @@ const ModelManager: React.FC<ModelManagerProps> = ({
   customModel, 
   setCustomModel,
   isDjActive,
-  setIsDjActive
 }) => {
   const [isUploading, setIsUploading] = useState(false);
 
@@ -45,13 +43,14 @@ const ModelManager: React.FC<ModelManagerProps> = ({
             <AgentIcon className="h-8 w-8 text-purple-400 mr-3" />
             <h3 className="text-xl font-semibold text-purple-300">DJ Autonomous Agent</h3>
         </div>
-        <p className="text-gray-400 mb-4 text-sm">Activate DJ to give the AI assistant autonomous coding abilities. DJ can programmatically create sounds, beats, and effects using the Web Audio API, perfect for live generation and sound design.</p>
-        <button
-          onClick={() => setIsDjActive(!isDjActive)}
-          className={`w-full font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${isDjActive ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
-        >
-          {isDjActive ? 'Deactivate DJ' : 'Activate DJ'}
-        </button>
+        <p className="text-gray-400 mb-4 text-sm">The DJ agent gives the AI assistant autonomous coding abilities to programmatically create sounds and beats. You can activate it via the AI Chat.</p>
+        <div className="bg-gray-800 p-3 rounded-lg flex items-center justify-between">
+            <span className="font-medium text-gray-300">DJ Mode Status:</span>
+            <span className={`font-bold px-3 py-1 rounded-full text-sm ${isDjActive ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                {isDjActive ? 'Active' : 'Inactive'}
+            </span>
+        </div>
+        <p className="text-xs text-gray-500 mt-2 text-center">To change the status, ask the AI Assistant, e.g., "activate DJ mode".</p>
       </div>
 
       <div className="p-4 bg-gray-700/50 rounded-lg">

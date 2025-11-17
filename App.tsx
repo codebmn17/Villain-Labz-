@@ -8,6 +8,25 @@ import { AppView, ClonedVoice, AudioPlaylistItem } from './types';
 import SpotifyConnect from './components/SpotifyConnect';
 import Storage from './components/Storage';
 
+export interface AppController {
+  // State
+  currentView: AppView;
+  clonedVoices: ClonedVoice[];
+  elevenLabsKey: string;
+  customModel: File | null;
+  isDjActive: boolean;
+  generatedTracks: AudioPlaylistItem[];
+  isOnline: boolean;
+  // Setters
+  setCurrentView: (view: AppView) => void;
+  setClonedVoices: (voices: ClonedVoice[]) => void;
+  setElevenLabsKey: (key: string) => void;
+  setCustomModel: (file: File | null) => void;
+  setIsDjActive: (isActive: boolean) => void;
+  setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
+}
+
+
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
   const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
@@ -30,6 +49,23 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const appController: AppController = {
+    currentView,
+    clonedVoices,
+    elevenLabsKey,
+    customModel,
+    isDjActive,
+    generatedTracks,
+    isOnline,
+    setCurrentView,
+    setClonedVoices,
+    setElevenLabsKey,
+    setCustomModel,
+    setIsDjActive,
+    setGeneratedTracks,
+  };
+
+
   const renderView = () => {
     switch (currentView) {
       case AppView.VoiceLab:
@@ -37,7 +73,7 @@ const App: React.FC = () => {
       case AppView.Studio:
         return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
       case AppView.Chat:
-        return <Chat isDjActive={isDjActive} />;
+        return <Chat appController={appController} />;
       case AppView.ModelManager:
         return (
           <ModelManager
@@ -46,7 +82,6 @@ const App: React.FC = () => {
             customModel={customModel}
             setCustomModel={setCustomModel}
             isDjActive={isDjActive}
-            setIsDjActive={setIsDjActive}
           />
         );
       case AppView.Storage:
