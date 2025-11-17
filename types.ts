@@ -6,6 +6,11 @@ export enum AppView {
   SpotifyConnect = 'SPOTIFY_CONNECT',
 }
 
+export enum StudioMode {
+  Original = 'ORIGINAL',
+  Cover = 'COVER',
+}
+
 export interface ChatMessage {
   sender: 'user' | 'ai';
   text: string;

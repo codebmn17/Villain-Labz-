@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
+import { researchAndAdaptSong, findSongLyrics } from '../services/geminiService';
 import { PlayIcon } from './icons/PlayIcon';
 import { StopIcon } from './icons/StopIcon';
+import { StudioMode } from '../types';
 
 interface StudioProps {
   clonedVoice: File | null;
@@ -9,10 +11,16 @@ interface StudioProps {
 }
 
 const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
+  const [studioMode, setStudioMode] = useState<StudioMode>(StudioMode.Original);
   const [lyrics, setLyrics] = useState('');
   const [style, setStyle] = useState('Dark Synthwave with heavy bass');
   const [bpm, setBpm] = useState(120);
+  const [originalTitle, setOriginalTitle] = useState('');
+  const [originalArtist, setOriginalArtist] = useState('');
+  const [shouldAdaptLyrics, setShouldAdaptLyrics] = useState(true);
+
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStatus, setGenerationStatus] = useState('');
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -38,14 +46,22 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
   }, [generatedAudioUrl]);
 
 
-  const handleGenerate = async () => {
-    if (!lyrics || !style) {
-      setError('Please provide lyrics and a music style.');
-      return;
+  const handleGenerateMusic = async () => {
+    if (studioMode === StudioMode.Cover) {
+        if (!originalTitle || !originalArtist) {
+            setError('Please provide the original song title and artist.');
+            return;
+        }
+    } else { // Original mode
+        if (!lyrics || !style) {
+            setError('Please provide lyrics and a music style.');
+            return;
+        }
     }
+
     if (!clonedVoice && !elevenLabsKey) {
-      setError('Please clone a voice in the Voice Lab or add an ElevenLabs API key in the Model Manager.');
-      return;
+        setError('Please clone a voice in the Voice Lab or add an ElevenLabs API key in the Model Manager.');
+        return;
     }
 
     setError(null);
@@ -53,13 +69,34 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
     setGeneratedAudioUrl(null);
 
     try {
-      // Simulate using ElevenLabs if key is provided, otherwise use "cloned voice"
-      const audioUrl = await elevenLabsGenerate(lyrics, elevenLabsKey);
-      setGeneratedAudioUrl(audioUrl);
+        let lyricsToGenerate = lyrics;
+
+        if (studioMode === StudioMode.Cover) {
+            setGenerationStatus('Researching song via web...');
+            await new Promise(res => setTimeout(res, 1000));
+            
+            const fetchedLyrics = shouldAdaptLyrics
+                ? await researchAndAdaptSong(originalTitle, originalArtist, style)
+                : await findSongLyrics(originalTitle, originalArtist);
+            
+            setLyrics(fetchedLyrics);
+            lyricsToGenerate = fetchedLyrics;
+
+            setGenerationStatus('Analyzing musical structure...');
+            await new Promise(res => setTimeout(res, 1500));
+        }
+
+        setGenerationStatus('Generating vocals & instrumentals...');
+        await new Promise(res => setTimeout(res, 1000));
+        
+        const audioUrl = await elevenLabsGenerate(lyricsToGenerate, elevenLabsKey);
+        setGeneratedAudioUrl(audioUrl);
+
     } catch (e) {
-      setError('Failed to generate audio. Please try again.');
+        setError('Failed to generate audio. Please try again.');
     } finally {
-      setIsGenerating(false);
+        setIsGenerating(false);
+        setGenerationStatus('');
     }
   };
 
@@ -74,28 +111,94 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
     }
   };
 
+  const ModeButton: React.FC<{mode: StudioMode, label: string}> = ({mode, label}) => (
+      <button 
+        onClick={() => setStudioMode(mode)}
+        className={`px-4 py-2 rounded-md text-sm font-medium transition ${studioMode === mode ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+      >
+        {label}
+      </button>
+  );
+
+  const getLyricsLabel = () => {
+    if (studioMode === StudioMode.Cover) {
+      return shouldAdaptLyrics ? "Adapted Lyrics (AI will generate this)" : "Original Lyrics (Fetched by AI)";
+    }
+    return "Lyrics";
+  };
+
+  const getLyricsPlaceholder = () => {
+    if (studioMode === StudioMode.Cover) {
+      return shouldAdaptLyrics 
+        ? "AI will research the original song and adapt the lyrics based on your chosen style." 
+        : "AI will research and fetch the original song lyrics here for you to use or edit.";
+    }
+    return "Enter your lyrics here...";
+  };
+
   return (
     <div className="bg-gray-800 p-6 rounded-xl shadow-2xl animate-fade-in">
-      <h2 className="text-3xl font-bold text-purple-400 mb-2">Studio</h2>
-      <p className="text-gray-400 mb-6">Compose your masterpiece. Write lyrics, define the style, and let the AI generate the track using your voice.</p>
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-3xl font-bold text-purple-400 mb-2">Studio</h2>
+          <p className="text-gray-400">Compose your masterpiece, original or cover.</p>
+        </div>
+        <div className="flex space-x-2 p-1 bg-gray-900/50 rounded-lg">
+          <ModeButton mode={StudioMode.Original} label="Original" />
+          <ModeButton mode={StudioMode.Cover} label="Cover Song" />
+        </div>
+      </div>
+      
 
       {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</p>}
 
       <div className="space-y-6">
+        {studioMode === StudioMode.Cover && (
+          <div className="p-4 bg-gray-700/50 rounded-lg animate-fade-in">
+            <h3 className="text-lg font-semibold text-purple-300 mb-3">Cover Song Details</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label htmlFor="originalTitle" className="block text-sm font-medium text-gray-300 mb-2">Original Song Title</label>
+                <input id="originalTitle" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., Blinding Lights" value={originalTitle} onChange={(e) => setOriginalTitle(e.target.value)} />
+              </div>
+              <div>
+                <label htmlFor="originalArtist" className="block text-sm font-medium text-gray-300 mb-2">Original Artist</label>
+                <input id="originalArtist" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., The Weeknd" value={originalArtist} onChange={(e) => setOriginalArtist(e.target.value)} />
+              </div>
+            </div>
+             <div className="flex items-center mt-4">
+                <input 
+                    id="adaptLyrics" 
+                    type="checkbox" 
+                    checked={shouldAdaptLyrics} 
+                    onChange={(e) => setShouldAdaptLyrics(e.target.checked)} 
+                    className="h-4 w-4 text-purple-600 bg-gray-900 border-gray-600 rounded focus:ring-purple-500 cursor-pointer" 
+                />
+                <label htmlFor="adaptLyrics" className="ml-3 block text-sm text-gray-300">
+                    Have AI adapt lyrics to the new style
+                </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-3">Connecting to Spotify can enhance song data research.</p>
+          </div>
+        )}
+        
         <div>
-          <label htmlFor="lyrics" className="block text-sm font-medium text-gray-300 mb-2">Lyrics</label>
+          <label htmlFor="lyrics" className="block text-sm font-medium text-gray-300 mb-2">
+            {getLyricsLabel()}
+          </label>
           <textarea
             id="lyrics"
             rows={8}
             className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-            placeholder="Enter your lyrics here..."
+            placeholder={getLyricsPlaceholder()}
             value={lyrics}
             onChange={(e) => setLyrics(e.target.value)}
+            readOnly={studioMode === StudioMode.Cover && isGenerating}
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <label htmlFor="style" className="block text-sm font-medium text-gray-300 mb-2">Music Style</label>
+            <label htmlFor="style" className="block text-sm font-medium text-gray-300 mb-2">New Music Style</label>
             <input
               id="style"
               type="text"
@@ -119,13 +222,13 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end pt-4">
           <button
-            onClick={handleGenerate}
+            onClick={handleGenerateMusic}
             disabled={isGenerating}
             className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg transition-all duration-300 shadow-lg"
           >
-            {isGenerating ? 'Generating...' : 'Generate Music'}
+            {isGenerating ? 'Generating...' : (studioMode === StudioMode.Cover ? 'Generate Cover' : 'Generate Music')}
           </button>
         </div>
       </div>
@@ -133,21 +236,20 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
       {isGenerating && (
         <div className="mt-6 text-center">
             <div className="w-16 h-16 border-4 border-dashed rounded-full animate-spin border-purple-400 mx-auto"></div>
-            <p className="mt-4 text-gray-300">The AI is composing your track...</p>
+            <p className="mt-4 text-gray-300 font-semibold animate-pulse">{generationStatus}</p>
         </div>
       )}
 
-      {generatedAudioUrl && (
-        <div className="mt-8 p-4 bg-gray-700 rounded-lg">
+      {generatedAudioUrl && !isGenerating && (
+        <div className="mt-8 p-4 bg-gray-700 rounded-lg animate-fade-in">
           <h3 className="text-lg font-semibold mb-3">Generated Track</h3>
           <div className="flex items-center space-x-4">
             <button onClick={togglePlayback} className="p-3 bg-purple-600 rounded-full hover:bg-purple-700 transition">
               {isPlaying ? <StopIcon /> : <PlayIcon />}
             </button>
-            <div className="w-full bg-gray-600 rounded-full h-2.5">
-                <div className="bg-purple-500 h-2.5 rounded-full" style={{width: "45%"}}></div>
+            <div className="flex-1">
+                <audio ref={audioRef} src={generatedAudioUrl} controls className="w-full"/>
             </div>
-            <audio ref={audioRef} src={generatedAudioUrl} />
           </div>
         </div>
       )}
