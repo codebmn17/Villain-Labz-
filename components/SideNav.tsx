@@ -22,7 +22,7 @@ const NavItem: React.FC<{
   return (
     <button
       onClick={() => setCurrentView(view)}
-      className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start w-full p-3 my-1 rounded-lg transition-all duration-200 group ${
+      className={`flex flex-col sm:flex-row items-center justify-center sm:justify-start w-full p-2 my-1 rounded-lg transition-all duration-200 group ${
         isActive ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-400 hover:bg-gray-700 hover:text-white'
       }`}
       aria-label={label}

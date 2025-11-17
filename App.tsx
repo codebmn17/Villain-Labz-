@@ -40,7 +40,7 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-900 font-sans">
       <SideNav currentView={currentView} setCurrentView={setCurrentView} />
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+      <main className="flex-1 p-2 sm:p-4 lg:p-6 overflow-y-auto">
         <div className="max-w-4xl mx-auto">
           {renderView()}
         </div>

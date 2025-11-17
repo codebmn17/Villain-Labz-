@@ -39,19 +39,19 @@ const Chat: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
+    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
       <h2 className="text-3xl font-bold text-purple-400 mb-4">AI Assistant</h2>
       <div className="flex-1 overflow-y-auto pr-4 space-y-4">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-lg px-4 py-2 rounded-xl ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
+            <div className={`max-w-lg px-3 py-2 rounded-xl ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
               <p style={{whiteSpace: 'pre-wrap'}}>{msg.text}</p>
             </div>
           </div>
         ))}
         {isLoading && (
           <div className="flex justify-start">
-            <div className="max-w-lg px-4 py-2 rounded-xl bg-gray-700 text-gray-200">
+            <div className="max-w-lg px-3 py-2 rounded-xl bg-gray-700 text-gray-200">
               <div className="flex items-center space-x-2">
                 <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse"></div>
                 <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse [animation-delay:0.2s]"></div>
@@ -69,13 +69,13 @@ const Chat: React.FC = () => {
           onChange={(e) => setInput(e.target.value)}
           onKeyPress={(e) => e.key === 'Enter' && handleSend()}
           placeholder="Ask for creative ideas..."
-          className="flex-1 bg-gray-700 border border-gray-600 rounded-l-lg p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+          className="flex-1 bg-gray-700 border border-gray-600 rounded-l-lg p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
           disabled={isLoading}
         />
         <button
           onClick={handleSend}
           disabled={isLoading}
-          className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-r-lg transition-all duration-300"
+          className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-r-lg transition-all duration-300"
         >
           Send
         </button>

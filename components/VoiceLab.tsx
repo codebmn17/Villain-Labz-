@@ -72,21 +72,21 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoice, clonedVoice }) => {
 
 
   return (
-    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl animate-fade-in">
+    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in">
       <h2 className="text-3xl font-bold text-purple-400 mb-2">Voice Lab</h2>
       <p className="text-gray-400 mb-6">Clone your voice by uploading a high-quality audio sample or recording yourself. Clear, mono audio without background noise works best.</p>
       
-      {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</p>}
+      {error && <p className="text-red-400 bg-red-900/50 p-2 rounded-md mb-4">{error}</p>}
       
       {clonedVoice && !isUploading && (
-        <div className="bg-green-900/50 text-green-300 p-4 rounded-lg mb-6 text-center">
+        <div className="bg-green-900/50 text-green-300 p-3 rounded-lg mb-6 text-center">
           <p className="font-semibold">Voice sample loaded: {clonedVoice.name}</p>
           <p className="text-sm">You can now use this voice in the Studio.</p>
         </div>
       )}
 
       <div className="grid md:grid-cols-2 gap-6">
-        <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center flex flex-col items-center justify-center hover:border-purple-500 transition-colors">
+        <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center flex flex-col items-center justify-center hover:border-purple-500 transition-colors">
           <UploadIcon />
           <p className="mt-4 text-gray-300">Drag & drop an audio file or click to browse</p>
           <input 
@@ -99,12 +99,12 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoice, clonedVoice }) => {
           {isUploading && <p className="mt-2 text-purple-400 animate-pulse">Cloning voice...</p>}
         </div>
 
-        <div className="bg-gray-700 rounded-lg p-8 text-center flex flex-col items-center justify-center">
+        <div className="bg-gray-700 rounded-lg p-6 text-center flex flex-col items-center justify-center">
           <p className="text-lg font-semibold text-gray-200 mb-4">Or record audio directly</p>
           <button 
             onClick={handleRecordClick}
             disabled={isUploading}
-            className={`px-6 py-3 font-bold rounded-full transition-all duration-300 text-white flex items-center ${
+            className={`px-4 py-2 font-bold rounded-full transition-all duration-300 text-white flex items-center ${
               isRecording 
               ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
               : 'bg-purple-600 hover:bg-purple-700'

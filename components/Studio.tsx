@@ -114,7 +114,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
   const ModeButton: React.FC<{mode: StudioMode, label: string}> = ({mode, label}) => (
       <button 
         onClick={() => setStudioMode(mode)}
-        className={`px-4 py-2 rounded-md text-sm font-medium transition ${studioMode === mode ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
+        className={`px-3 py-1 rounded-md text-sm font-medium transition ${studioMode === mode ? 'bg-purple-600 text-white' : 'bg-gray-700 hover:bg-gray-600 text-gray-300'}`}
       >
         {label}
       </button>
@@ -137,7 +137,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
   };
 
   return (
-    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl animate-fade-in">
+    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-3xl font-bold text-purple-400 mb-2">Studio</h2>
@@ -150,20 +150,20 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
       </div>
       
 
-      {error && <p className="text-red-400 bg-red-900/50 p-3 rounded-md mb-4">{error}</p>}
+      {error && <p className="text-red-400 bg-red-900/50 p-2 rounded-md mb-4">{error}</p>}
 
       <div className="space-y-6">
         {studioMode === StudioMode.Cover && (
-          <div className="p-4 bg-gray-700/50 rounded-lg animate-fade-in">
+          <div className="p-3 bg-gray-700/50 rounded-lg animate-fade-in">
             <h3 className="text-lg font-semibold text-purple-300 mb-3">Cover Song Details</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="originalTitle" className="block text-sm font-medium text-gray-300 mb-2">Original Song Title</label>
-                <input id="originalTitle" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., Blinding Lights" value={originalTitle} onChange={(e) => setOriginalTitle(e.target.value)} />
+                <input id="originalTitle" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., Blinding Lights" value={originalTitle} onChange={(e) => setOriginalTitle(e.target.value)} />
               </div>
               <div>
                 <label htmlFor="originalArtist" className="block text-sm font-medium text-gray-300 mb-2">Original Artist</label>
-                <input id="originalArtist" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., The Weeknd" value={originalArtist} onChange={(e) => setOriginalArtist(e.target.value)} />
+                <input id="originalArtist" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., The Weeknd" value={originalArtist} onChange={(e) => setOriginalArtist(e.target.value)} />
               </div>
             </div>
              <div className="flex items-center mt-4">
@@ -189,7 +189,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
           <textarea
             id="lyrics"
             rows={8}
-            className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+            className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
             placeholder={getLyricsPlaceholder()}
             value={lyrics}
             onChange={(e) => setLyrics(e.target.value)}
@@ -202,7 +202,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
             <input
               id="style"
               type="text"
-              className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+              className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
               placeholder="e.g., Sad acoustic ballad"
               value={style}
               onChange={(e) => setStyle(e.target.value)}
@@ -226,7 +226,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
           <button
             onClick={handleGenerateMusic}
             disabled={isGenerating}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-3 px-8 rounded-lg transition-all duration-300 shadow-lg"
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-lg transition-all duration-300 shadow-lg"
           >
             {isGenerating ? 'Generating...' : (studioMode === StudioMode.Cover ? 'Generate Cover' : 'Generate Music')}
           </button>
@@ -241,10 +241,10 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
       )}
 
       {generatedAudioUrl && !isGenerating && (
-        <div className="mt-8 p-4 bg-gray-700 rounded-lg animate-fade-in">
+        <div className="mt-8 p-3 bg-gray-700 rounded-lg animate-fade-in">
           <h3 className="text-lg font-semibold mb-3">Generated Track</h3>
           <div className="flex items-center space-x-4">
-            <button onClick={togglePlayback} className="p-3 bg-purple-600 rounded-full hover:bg-purple-700 transition">
+            <button onClick={togglePlayback} className="p-2 bg-purple-600 rounded-full hover:bg-purple-700 transition">
               {isPlaying ? <StopIcon /> : <PlayIcon />}
             </button>
             <div className="flex-1">
