@@ -1,0 +1,7 @@
+{
+  "name": "Villain Labz",
+  "description": "An AI music making platform to clone your voice, generate music in any style, upload lyrics, and chat with a creative AI assistant. Compatible with custom models and ElevenLabs.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
