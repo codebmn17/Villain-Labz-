@@ -1,15 +1,25 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage } from '../types';
-import { sendMessageToAI } from '../services/geminiService';
+import { sendMessageToAI, executeFunctionCall } from '../services/geminiService';
 
-const Chat: React.FC = () => {
+interface ChatProps {
+  isDjActive: boolean;
+}
+
+const Chat: React.FC<ChatProps> = ({ isDjActive }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { sender: 'ai', text: "I'm your creative assistant. Ask me for lyric ideas, song structures, or anything else!" }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isDjActive) {
+       setMessages(prev => [...prev, { sender: 'ai', text: "DJ is active. I can now write and execute code to generate audio. Try asking me to 'create a kick drum sound'."}]);
+    }
+  }, [isDjActive]);
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -22,13 +32,31 @@ const Chat: React.FC = () => {
 
     const userMessage: ChatMessage = { sender: 'user', text: input };
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = input;
     setInput('');
     setIsLoading(true);
 
     try {
-      const aiResponse = await sendMessageToAI(input);
-      const aiMessage: ChatMessage = { sender: 'ai', text: aiResponse };
+      // First call to the AI with the user's text
+      let response = await sendMessageToAI(currentInput, isDjActive);
+      let functionCalls = response.functionCalls;
+
+      if (functionCalls && functionCalls.length > 0) {
+        setMessages(prev => [...prev, { sender: 'ai', text: `DJ is writing code for: ${functionCalls[0].name}...` }]);
+        
+        // Execute the function and get the result
+        const { toolResponse, executionResult } = await executeFunctionCall(functionCalls[0]);
+        
+        setMessages(prev => [...prev, { sender: 'ai', text: executionResult }]);
+
+        // Send the tool response back to the AI to continue the conversation
+        response = await sendMessageToAI(toolResponse, isDjActive);
+      }
+
+      // The final response from the AI after the tool call (or the initial response if no tool call)
+      const aiMessage: ChatMessage = { sender: 'ai', text: response.text };
       setMessages(prev => [...prev, aiMessage]);
+
     } catch (error) {
       console.error(error);
       const errorMessage: ChatMessage = { sender: 'ai', text: 'Sorry, I encountered an error. Please try again.' };
@@ -40,7 +68,7 @@ const Chat: React.FC = () => {
 
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
-      <h2 className="text-3xl font-bold text-purple-400 mb-4">AI Assistant</h2>
+      <h2 className="text-3xl font-bold text-purple-400 mb-4">AI Assistant {isDjActive && '(DJ Mode)'}</h2>
       <div className="flex-1 overflow-y-auto pr-4 space-y-4">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>

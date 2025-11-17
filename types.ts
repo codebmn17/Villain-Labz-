@@ -11,6 +11,13 @@ export enum StudioMode {
   Cover = 'COVER',
 }
 
+export interface ClonedVoice {
+  id: string;
+  name: string;
+  file: File;
+  cloneDate: string;
+}
+
 export interface ChatMessage {
   sender: 'user' | 'ai';
   text: string;

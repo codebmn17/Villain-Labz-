@@ -9,6 +9,7 @@ import { SpotifyIcon } from './icons/SpotifyIcon';
 interface SideNavProps {
   currentView: AppView;
   setCurrentView: (view: AppView) => void;
+  isOnline: boolean;
 }
 
 const NavItem: React.FC<{
@@ -34,13 +35,16 @@ const NavItem: React.FC<{
   );
 };
 
-const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView }) => {
+const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView, isOnline }) => {
   return (
     <nav className="bg-gray-800 p-2 flex flex-col justify-between items-center shadow-2xl w-20 sm:w-20 sm:hover:w-56 transition-all duration-300 group overflow-hidden">
       <div>
-        <div className="text-center sm:text-left p-2 mb-4">
-            <h1 className="text-3xl font-bold text-purple-400">V</h1>
-            <h1 className="text-2xl font-bold text-purple-400 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 hidden">illain Labz</h1>
+        <div className="p-2 mb-4">
+          <h1 className="text-3xl font-black text-red-600 [text-shadow:0_0_5px_rgba(220,38,38,0.5)] text-center sm:text-left">
+            <span>V</span>
+            <span className="sm:group-hover:hidden">L</span>
+            <span className="text-2xl sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300 hidden sm:group-hover:inline">illain Labz</span>
+          </h1>
         </div>
         <ul>
           <li><NavItem view={AppView.VoiceLab} currentView={currentView} setCurrentView={setCurrentView} icon={<MicIcon />} label="Voice Lab" /></li>
@@ -50,8 +54,14 @@ const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView }) => {
           <li><NavItem view={AppView.SpotifyConnect} currentView={currentView} setCurrentView={setCurrentView} icon={<SpotifyIcon />} label="Connect" /></li>
         </ul>
       </div>
-      <div className="text-xs text-gray-500 text-center hidden sm:block sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
-        &copy; {new Date().getFullYear()}
+      <div>
+        <div className="flex items-center justify-center p-2 text-xs sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
+            <div className={`h-2.5 w-2.5 rounded-full mr-2 ${isOnline ? 'bg-green-400' : 'bg-red-500'}`}></div>
+            <span className={isOnline ? 'text-green-400' : 'text-red-500'}>{isOnline ? 'Online' : 'Offline'}</span>
+        </div>
+        <div className="text-xs text-gray-500 text-center hidden sm:block sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
+            &copy; {new Date().getFullYear()}
+        </div>
       </div>
     </nav>
   );

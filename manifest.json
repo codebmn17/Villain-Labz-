@@ -1,0 +1,21 @@
+{
+  "name": "Villain Labz",
+  "short_name": "Villain Labz",
+  "description": "An AI music making platform to clone your voice, generate music in any style, upload lyrics, and chat with a creative AI assistant.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#8b5cf6",
+  "icons": [
+    {
+      "src": "/vite.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "/vite.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,15 +1,24 @@
-
 import React, { useState } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
+import { AgentIcon } from './icons/AgentIcon';
 
 interface ModelManagerProps {
   elevenLabsKey: string;
   setElevenLabsKey: (key: string) => void;
   customModel: File | null;
   setCustomModel: (file: File | null) => void;
+  isDjActive: boolean;
+  setIsDjActive: (isActive: boolean) => void;
 }
 
-const ModelManager: React.FC<ModelManagerProps> = ({ elevenLabsKey, setElevenLabsKey, customModel, setCustomModel }) => {
+const ModelManager: React.FC<ModelManagerProps> = ({ 
+  elevenLabsKey, 
+  setElevenLabsKey, 
+  customModel, 
+  setCustomModel,
+  isDjActive,
+  setIsDjActive
+}) => {
   const [isUploading, setIsUploading] = useState(false);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -28,7 +37,21 @@ const ModelManager: React.FC<ModelManagerProps> = ({ elevenLabsKey, setElevenLab
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in space-y-8">
       <div>
         <h2 className="text-3xl font-bold text-purple-400 mb-2">Model Manager</h2>
-        <p className="text-gray-400">Configure external models and APIs to expand your creative toolkit.</p>
+        <p className="text-gray-400">Configure external models and AI agents to expand your creative toolkit.</p>
+      </div>
+
+      <div className="p-4 bg-gray-700/50 rounded-lg">
+        <div className="flex items-center mb-3">
+            <AgentIcon className="h-8 w-8 text-purple-400 mr-3" />
+            <h3 className="text-xl font-semibold text-purple-300">DJ Autonomous Agent</h3>
+        </div>
+        <p className="text-gray-400 mb-4 text-sm">Activate DJ to give the AI assistant autonomous coding abilities. DJ can programmatically create sounds, beats, and effects using the Web Audio API, perfect for live generation and sound design.</p>
+        <button
+          onClick={() => setIsDjActive(!isDjActive)}
+          className={`w-full font-bold py-2 px-4 rounded-lg transition-colors duration-300 ${isDjActive ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-purple-600 hover:bg-purple-700 text-white'}`}
+        >
+          {isDjActive ? 'Deactivate DJ' : 'Activate DJ'}
+        </button>
       </div>
 
       <div className="p-4 bg-gray-700/50 rounded-lg">
@@ -60,6 +83,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({ elevenLabsKey, setElevenLab
           <p className="mt-4 text-gray-300">
             {isUploading ? "Uploading model..." : (customModel ? `${customModel.name} loaded` : "Upload your custom model file")}
           </p>
+          <p className="text-xs text-gray-500 mt-1">Max file size: 3GB</p>
           <input 
             type="file" 
             onChange={handleFileChange}

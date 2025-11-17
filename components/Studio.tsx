@@ -1,16 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { researchAndAdaptSong, findSongLyrics } from '../services/geminiService';
-import { PlayIcon } from './icons/PlayIcon';
-import { StopIcon } from './icons/StopIcon';
-import { StudioMode } from '../types';
+import { UploadIcon } from './icons/UploadIcon';
+import { ClonedVoice, StudioMode } from '../types';
+import AudioPlayer from './AudioPlayer';
 
 interface StudioProps {
-  clonedVoice: File | null;
+  clonedVoices: ClonedVoice[];
   elevenLabsKey: string;
 }
 
-const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
+const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey }) => {
   const [studioMode, setStudioMode] = useState<StudioMode>(StudioMode.Original);
   const [lyrics, setLyrics] = useState('');
   const [style, setStyle] = useState('Dark Synthwave with heavy bass');
@@ -18,32 +18,23 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
   const [originalTitle, setOriginalTitle] = useState('');
   const [originalArtist, setOriginalArtist] = useState('');
   const [shouldAdaptLyrics, setShouldAdaptLyrics] = useState(true);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStatus, setGenerationStatus] = useState('');
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const audioRef = React.useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-
-    const onPlay = () => setIsPlaying(true);
-    const onPause = () => setIsPlaying(false);
-    const onEnded = () => setIsPlaying(false);
-    
-    audio.addEventListener('play', onPlay);
-    audio.addEventListener('pause', onPause);
-    audio.addEventListener('ended', onEnded);
-    
-    return () => {
-      audio.removeEventListener('play', onPlay);
-      audio.removeEventListener('pause', onPause);
-      audio.removeEventListener('ended', onEnded);
-    };
-  }, [generatedAudioUrl]);
+    // If the selected voice is deleted, reset the selection
+    if (selectedVoiceId && !clonedVoices.find(v => v.id === selectedVoiceId)) {
+        setSelectedVoiceId('');
+    }
+    // If there's only one voice, select it by default
+    else if (!selectedVoiceId && clonedVoices.length > 0) {
+       setSelectedVoiceId(clonedVoices[0].id);
+    }
+  }, [clonedVoices, selectedVoiceId]);
 
 
   const handleGenerateMusic = async () => {
@@ -59,8 +50,8 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
         }
     }
 
-    if (!clonedVoice && !elevenLabsKey) {
-        setError('Please clone a voice in the Voice Lab or add an ElevenLabs API key in the Model Manager.');
+    if (!selectedVoiceId && !elevenLabsKey) {
+        setError('Please select a cloned voice or add an ElevenLabs API key in the Model Manager.');
         return;
     }
 
@@ -100,31 +91,46 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
     }
   };
 
-  const togglePlayback = () => {
-    const audio = audioRef.current;
-    if (audio) {
-      if (isPlaying) {
-        audio.pause();
-      } else {
-        audio.play();
-      }
-    }
-  };
-
   const handleDownload = (format: 'wav' | 'mp3') => {
     if (!generatedAudioUrl) {
       setError("No audio to download.");
       return;
     }
     
-    // In a real app, converting to MP3 would require a client-side library.
-    // For this demo, we'll download the original WAV blob with the chosen file extension.
     const link = document.createElement('a');
     link.href = generatedAudioUrl;
     link.download = `villain-labz-track-${Date.now()}.${format}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+  
+  const handleLyricsFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const MAX_SIZE = 3 * 1024 * 1024 * 1024; // 3GB
+    if (file.size > MAX_SIZE) {
+      setError(`File is too large. Maximum size is ${MAX_SIZE / 1024 / 1024 / 1024}GB.`);
+      if (event.target) event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      setLyrics(text);
+      setError(null); // Clear previous errors
+    };
+    reader.onerror = (e) => {
+      console.error("Error reading file:", e);
+      setError("Failed to read the lyrics file.");
+    };
+    reader.readAsText(file);
+
+    if (event.target) event.target.value = '';
   };
 
 
@@ -200,9 +206,23 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
         )}
         
         <div>
-          <label htmlFor="lyrics" className="block text-sm font-medium text-gray-300 mb-2">
-            {getLyricsLabel()}
-          </label>
+           <div className="flex justify-between items-center mb-2">
+            <label htmlFor="lyrics" className="block text-sm font-medium text-gray-300">
+              {getLyricsLabel()}
+            </label>
+            <label htmlFor="lyrics-file-upload" className="flex items-center text-sm text-purple-400 hover:text-purple-300 cursor-pointer font-medium transition-colors">
+              <UploadIcon className="h-5 w-5 mr-2 text-purple-400" />
+              <span>Upload Lyrics</span>
+              <input 
+                id="lyrics-file-upload"
+                type="file"
+                accept=".txt,.md"
+                className="hidden"
+                onChange={handleLyricsFileUpload}
+                disabled={studioMode === StudioMode.Cover && isGenerating}
+              />
+            </label>
+          </div>
           <textarea
             id="lyrics"
             rows={8}
@@ -212,6 +232,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
             onChange={(e) => setLyrics(e.target.value)}
             readOnly={studioMode === StudioMode.Cover && isGenerating}
           />
+          <p className="text-xs text-gray-500 mt-2">You can paste lyrics directly or upload a text file (up to 3GB).</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
@@ -237,6 +258,30 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
               className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
             />
           </div>
+           <div className="md:col-span-2">
+            <label htmlFor="voice-select" className="block text-sm font-medium text-gray-300 mb-2">Cloned Voice</label>
+            <select
+                id="voice-select"
+                value={selectedVoiceId}
+                onChange={(e) => setSelectedVoiceId(e.target.value)}
+                className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 disabled:bg-gray-800 disabled:text-gray-500 disabled:cursor-not-allowed transition"
+                disabled={clonedVoices.length === 0}
+            >
+                <option value="" disabled>
+                    {clonedVoices.length === 0 ? "No voices available" : "Select a voice..."}
+                </option>
+                {clonedVoices.map(voice => (
+                    <option key={voice.id} value={voice.id}>{voice.name}</option>
+                ))}
+            </select>
+             <p className="text-xs text-gray-500 mt-1">
+                {clonedVoices.length === 0 
+                    ? "Go to the Voice Lab to clone a voice. " 
+                    : "Or, use a premium voice with an "
+                }
+                <span className="font-semibold">ElevenLabs key</span> in the Model Manager.
+            </p>
+          </div>
         </div>
 
         <div className="flex justify-end pt-4">
@@ -260,14 +305,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
       {generatedAudioUrl && !isGenerating && (
         <div className="mt-8 p-3 bg-gray-700 rounded-lg animate-fade-in">
           <h3 className="text-lg font-semibold mb-3">Generated Track</h3>
-          <div className="flex items-center space-x-4">
-            <button onClick={togglePlayback} className="p-2 bg-purple-600 rounded-full hover:bg-purple-700 transition">
-              {isPlaying ? <StopIcon /> : <PlayIcon />}
-            </button>
-            <div className="flex-1">
-                <audio ref={audioRef} src={generatedAudioUrl} controls className="w-full"/>
-            </div>
-          </div>
+          <AudioPlayer src={generatedAudioUrl} />
           <div className="mt-4 pt-4 border-t border-gray-600">
             <h4 className="text-md font-semibold mb-2 text-gray-300">Export Options</h4>
             <div className="flex space-x-3">
