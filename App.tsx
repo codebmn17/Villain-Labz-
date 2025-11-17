@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
@@ -6,6 +5,7 @@ import Studio from './components/Studio';
 import Chat from './components/Chat';
 import ModelManager from './components/ModelManager';
 import { AppView } from './types';
+import SpotifyConnect from './components/SpotifyConnect';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
@@ -30,6 +30,8 @@ const App: React.FC = () => {
             setCustomModel={setCustomModel}
           />
         );
+      case AppView.SpotifyConnect:
+        return <SpotifyConnect />;
       default:
         return <Studio clonedVoice={clonedVoice} elevenLabsKey={elevenLabsKey} />;
     }

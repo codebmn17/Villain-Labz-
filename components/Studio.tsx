@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { PlayIcon } from './icons/PlayIcon';
@@ -12,6 +11,7 @@ interface StudioProps {
 const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
   const [lyrics, setLyrics] = useState('');
   const [style, setStyle] = useState('Dark Synthwave with heavy bass');
+  const [bpm, setBpm] = useState(120);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,16 +93,30 @@ const Studio: React.FC<StudioProps> = ({ clonedVoice, elevenLabsKey }) => {
             onChange={(e) => setLyrics(e.target.value)}
           />
         </div>
-        <div>
-          <label htmlFor="style" className="block text-sm font-medium text-gray-300 mb-2">Music Style</label>
-          <input
-            id="style"
-            type="text"
-            className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-            placeholder="e.g., Sad acoustic ballad, 80s synthpop anthem"
-            value={style}
-            onChange={(e) => setStyle(e.target.value)}
-          />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label htmlFor="style" className="block text-sm font-medium text-gray-300 mb-2">Music Style</label>
+            <input
+              id="style"
+              type="text"
+              className="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+              placeholder="e.g., Sad acoustic ballad"
+              value={style}
+              onChange={(e) => setStyle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="bpm" className="block text-sm font-medium text-gray-300 mb-2">BPM: <span className="font-bold text-purple-400">{bpm}</span></label>
+            <input
+              id="bpm"
+              type="range"
+              min="60"
+              max="180"
+              value={bpm}
+              onChange={(e) => setBpm(Number(e.target.value))}
+              className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+            />
+          </div>
         </div>
 
         <div className="flex justify-end">
