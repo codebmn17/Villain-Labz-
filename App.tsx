@@ -13,6 +13,9 @@ export interface AppController {
   currentView: AppView;
   clonedVoices: ClonedVoice[];
   elevenLabsKey: string;
+  openAIKey: string;
+  claudeKey: string;
+  ninjaKey: string;
   customModel: File | null;
   isDjActive: boolean;
   generatedTracks: AudioPlaylistItem[];
@@ -21,6 +24,9 @@ export interface AppController {
   setCurrentView: (view: AppView) => void;
   setClonedVoices: (voices: ClonedVoice[]) => void;
   setElevenLabsKey: (key: string) => void;
+  setOpenAIKey: (key: string) => void;
+  setClaudeKey: (key: string) => void;
+  setNinjaKey: (key: string) => void;
   setCustomModel: (file: File | null) => void;
   setIsDjActive: (isActive: boolean) => void;
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
@@ -31,6 +37,9 @@ const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
   const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
   const [elevenLabsKey, setElevenLabsKey] = useState<string>('');
+  const [openAIKey, setOpenAIKey] = useState<string>('');
+  const [claudeKey, setClaudeKey] = useState<string>('');
+  const [ninjaKey, setNinjaKey] = useState<string>('');
   const [customModel, setCustomModel] = useState<File | null>(null);
   const [isDjActive, setIsDjActive] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
@@ -53,6 +62,9 @@ const App: React.FC = () => {
     currentView,
     clonedVoices,
     elevenLabsKey,
+    openAIKey,
+    claudeKey,
+    ninjaKey,
     customModel,
     isDjActive,
     generatedTracks,
@@ -60,6 +72,9 @@ const App: React.FC = () => {
     setCurrentView,
     setClonedVoices,
     setElevenLabsKey,
+    setOpenAIKey,
+    setClaudeKey,
+    setNinjaKey,
     setCustomModel,
     setIsDjActive,
     setGeneratedTracks,
@@ -79,6 +94,12 @@ const App: React.FC = () => {
           <ModelManager
             elevenLabsKey={elevenLabsKey}
             setElevenLabsKey={setElevenLabsKey}
+            openAIKey={openAIKey}
+            setOpenAIKey={setOpenAIKey}
+            claudeKey={claudeKey}
+            setClaudeKey={setClaudeKey}
+            ninjaKey={ninjaKey}
+            setNinjaKey={setNinjaKey}
             customModel={customModel}
             setCustomModel={setCustomModel}
             isDjActive={isDjActive}

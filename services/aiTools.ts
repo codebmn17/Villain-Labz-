@@ -82,6 +82,39 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['apiKey']
         }
     },
+     {
+        name: 'setOpenAIApiKey',
+        description: 'Sets the API key for OpenAI services.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                apiKey: { type: Type.STRING, description: 'The OpenAI API key.' }
+            },
+            required: ['apiKey']
+        }
+    },
+    {
+        name: 'setClaudeApiKey',
+        description: 'Sets the API key for Claude (Anthropic) services.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                apiKey: { type: Type.STRING, description: 'The Claude API key.' }
+            },
+            required: ['apiKey']
+        }
+    },
+    {
+        name: 'setNinjaApiKey',
+        description: 'Sets the API key for the Ninja AI service.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                apiKey: { type: Type.STRING, description: 'The Ninja AI API key.' }
+            },
+            required: ['apiKey']
+        }
+    },
     {
         name: 'setDjMode',
         description: 'Activates or deactivates the DJ Autonomous Agent, which can generate audio programmatically.',

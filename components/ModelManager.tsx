@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
 import { AgentIcon } from './icons/AgentIcon';
+import { OpenAIIcon } from './icons/OpenAIIcon';
+import { ClaudeIcon } from './icons/ClaudeIcon';
+import { NinjaIcon } from './icons/NinjaIcon';
 
 interface ModelManagerProps {
   elevenLabsKey: string;
   setElevenLabsKey: (key: string) => void;
+  openAIKey: string;
+  setOpenAIKey: (key: string) => void;
+  claudeKey: string;
+  setClaudeKey: (key: string) => void;
+  ninjaKey: string;
+  setNinjaKey: (key: string) => void;
   customModel: File | null;
   setCustomModel: (file: File | null) => void;
   isDjActive: boolean;
@@ -12,7 +21,13 @@ interface ModelManagerProps {
 
 const ModelManager: React.FC<ModelManagerProps> = ({ 
   elevenLabsKey, 
-  setElevenLabsKey, 
+  setElevenLabsKey,
+  openAIKey,
+  setOpenAIKey,
+  claudeKey,
+  setClaudeKey,
+  ninjaKey,
+  setNinjaKey,
   customModel, 
   setCustomModel,
   isDjActive,
@@ -51,6 +66,57 @@ const ModelManager: React.FC<ModelManagerProps> = ({
             </span>
         </div>
         <p className="text-xs text-gray-500 mt-2 text-center">To change the status, ask the AI Assistant, e.g., "activate DJ mode".</p>
+      </div>
+
+       <div className="p-4 bg-gray-700/50 rounded-lg">
+        <div className="flex items-center mb-3">
+            <OpenAIIcon />
+            <h3 className="text-xl font-semibold text-purple-300">OpenAI Integration</h3>
+        </div>
+        <p className="text-gray-400 mb-4 text-sm">Use your OpenAI API key for advanced text generation and analysis features within the AI assistant.</p>
+        <label htmlFor="openai-key" className="block text-sm font-medium text-gray-300 mb-2">OpenAI API Key</label>
+        <input
+          id="openai-key"
+          type="password"
+          value={openAIKey}
+          onChange={(e) => setOpenAIKey(e.target.value)}
+          className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+          placeholder="Enter your API key (sk-...)"
+        />
+      </div>
+
+      <div className="p-4 bg-gray-700/50 rounded-lg">
+        <div className="flex items-center mb-3">
+            <ClaudeIcon />
+            <h3 className="text-xl font-semibold text-purple-300">Claude (Anthropic)</h3>
+        </div>
+        <p className="text-gray-400 mb-4 text-sm">Connect your Claude API key for access to Anthropic's powerful conversational and creative text models.</p>
+        <label htmlFor="claude-key" className="block text-sm font-medium text-gray-300 mb-2">Claude API Key</label>
+        <input
+          id="claude-key"
+          type="password"
+          value={claudeKey}
+          onChange={(e) => setClaudeKey(e.target.value)}
+          className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+          placeholder="Enter your API key"
+        />
+      </div>
+
+      <div className="p-4 bg-gray-700/50 rounded-lg">
+        <div className="flex items-center mb-3">
+            <NinjaIcon />
+            <h3 className="text-xl font-semibold text-purple-300">Ninja AI</h3>
+        </div>
+        <p className="text-gray-400 mb-4 text-sm">Integrate with the Ninja AI stealth model for specialized, high-speed audio processing tasks.</p>
+        <label htmlFor="ninja-key" className="block text-sm font-medium text-gray-300 mb-2">Ninja AI API Key</label>
+        <input
+          id="ninja-key"
+          type="password"
+          value={ninjaKey}
+          onChange={(e) => setNinjaKey(e.target.value)}
+          className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
+          placeholder="Enter your API key"
+        />
       </div>
 
       <div className="p-4 bg-gray-700/50 rounded-lg">

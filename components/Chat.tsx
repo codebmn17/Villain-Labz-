@@ -90,7 +90,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
           switch (name) {
             case 'navigateTo':
-              // FIX: Cast args.view to AppView before passing it to setCurrentView.
               appController.setCurrentView(args.view as AppView);
               result = { success: true, view: args.view };
               executionResultText = `Navigated to ${args.view}.`;
@@ -103,7 +102,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                 let artist: string;
                 
                 if (name === 'generateCoverSong') {
-                  // FIX: Cast args to a typed object to ensure type safety for its properties.
                   const { originalTitle, originalArtist, style, adaptLyrics } = args as { originalTitle: string; originalArtist: string; style: string; adaptLyrics: boolean; };
                   title = originalTitle;
                   artist = originalArtist;
@@ -112,7 +110,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                       ? await researchAndAdaptSong(title, artist, style)
                       : await findSongLyrics(title, artist);
                 } else {
-                  // FIX: Cast args to a typed object to ensure type safety for its properties.
                   const originalArgs = args as { lyrics: string; style: string; };
                   lyricsToGenerate = originalArgs.lyrics;
                   title = `AI Original - ${originalArgs.style.substring(0, 20)}`;
@@ -160,13 +157,26 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               }
               break;
             case 'setElevenLabsApiKey':
-              // FIX: Cast args.apiKey to string.
               appController.setElevenLabsKey(args.apiKey as string);
               result = { success: true };
               executionResultText = `ElevenLabs API key has been set.`;
               break;
+            case 'setOpenAIApiKey':
+              appController.setOpenAIKey(args.apiKey as string);
+              result = { success: true };
+              executionResultText = `OpenAI API key has been set.`;
+              break;
+            case 'setClaudeApiKey':
+              appController.setClaudeKey(args.apiKey as string);
+              result = { success: true };
+              executionResultText = `Claude API key has been set.`;
+              break;
+            case 'setNinjaApiKey':
+              appController.setNinjaKey(args.apiKey as string);
+              result = { success: true };
+              executionResultText = `Ninja AI API key has been set.`;
+              break;
             case 'setDjMode':
-              // FIX: Cast args.isActive to boolean.
               const isActive = args.isActive as boolean;
               appController.setIsDjActive(isActive);
               result = { success: true, status: isActive };
