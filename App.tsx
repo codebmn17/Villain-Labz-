@@ -1,37 +1,47 @@
+
 import React, { useState, useEffect } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
 import Studio from './components/Studio';
 import Chat from './components/Chat';
 import ModelManager from './components/ModelManager';
-import { AppView, ClonedVoice, AudioPlaylistItem } from './types';
+import { AppView, ClonedVoice, AudioPlaylistItem, DrumPadConfig, AppController } from './types';
 import SpotifyConnect from './components/SpotifyConnect';
 import Storage from './components/Storage';
+import DrumMachine from './components/DrumMachine';
 
-export interface AppController {
-  // State
-  currentView: AppView;
-  clonedVoices: ClonedVoice[];
-  elevenLabsKey: string;
-  openAIKey: string;
-  claudeKey: string;
-  ninjaKey: string;
-  customModel: File | null;
-  isDjActive: boolean;
-  generatedTracks: AudioPlaylistItem[];
-  isOnline: boolean;
-  // Setters
-  setCurrentView: (view: AppView) => void;
-  setClonedVoices: (voices: ClonedVoice[]) => void;
-  setElevenLabsKey: (key: string) => void;
-  setOpenAIKey: (key: string) => void;
-  setClaudeKey: (key: string) => void;
-  setNinjaKey: (key: string) => void;
-  setCustomModel: (file: File | null) => void;
-  setIsDjActive: (isActive: boolean) => void;
-  setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
-}
-
+// Hardcore Rap / Sub-Woofer Configuration (5x4 Grid)
+const DEFAULT_PADS: DrumPadConfig[] = [
+  // Row 0 (Keys 5-8): DEEP BASS 808s (Single Shots)
+  { id: 0, keyTrigger: '5', label: 'Spinz 808', color: 'bg-emerald-900', soundType: 'bass', baseFrequency: 38, pitchDecay: 0.08, volumeDecay: 2.5, waveform: 'sine', noise: false, distortion: true },
+  { id: 1, keyTrigger: '6', label: 'Sub Woofer', color: 'bg-emerald-800', soundType: 'bass', baseFrequency: 32, pitchDecay: 0.02, volumeDecay: 3.5, waveform: 'sine', noise: false, distortion: false },
+  { id: 2, keyTrigger: '7', label: 'Punch 808', color: 'bg-emerald-700', soundType: 'bass', baseFrequency: 42, pitchDecay: 0.12, volumeDecay: 1.5, waveform: 'triangle', noise: false, distortion: true },
+  { id: 3, keyTrigger: '8', label: 'Drill Glide', color: 'bg-emerald-600', soundType: 'bass', baseFrequency: 35, pitchDecay: 0.5, volumeDecay: 2.0, waveform: 'sine', noise: false, distortion: true },
+  
+  // Row 1 (Keys 1-4): RAP PERCUSSION (One Shots)
+  { id: 4, keyTrigger: '1', label: 'Trap Clap', color: 'bg-orange-800', soundType: 'snare', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.2, waveform: 'square', noise: true, distortion: false },
+  { id: 5, keyTrigger: '2', label: 'Hard Snare', color: 'bg-orange-700', soundType: 'snare', baseFrequency: 200, pitchDecay: 0.1, volumeDecay: 0.25, waveform: 'triangle', noise: true, distortion: true },
+  { id: 6, keyTrigger: '3', label: 'Hi-Hat Closed', color: 'bg-orange-600', soundType: 'hihat', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.05, waveform: 'square', noise: true, distortion: false },
+  { id: 7, keyTrigger: '4', label: 'Hi-Hat Open', color: 'bg-orange-500', soundType: 'hihat', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.4, waveform: 'square', noise: true, distortion: false },
+  
+  // Row 2 (Keys Q-R): MELODIC SCALES (D Minor)
+  { id: 8, keyTrigger: 'Q', label: 'Pluck D3', color: 'bg-purple-900', soundType: 'synth', baseFrequency: 146.83, pitchDecay: 0, volumeDecay: 0.5, waveform: 'sawtooth', noise: false, distortion: false },
+  { id: 9, keyTrigger: 'W', label: 'Pluck F3', color: 'bg-purple-800', soundType: 'synth', baseFrequency: 174.61, pitchDecay: 0, volumeDecay: 0.5, waveform: 'sawtooth', noise: false, distortion: false },
+  { id: 10, keyTrigger: 'E', label: 'Pluck G3', color: 'bg-purple-700', soundType: 'synth', baseFrequency: 196.00, pitchDecay: 0, volumeDecay: 0.5, waveform: 'sawtooth', noise: false, distortion: false },
+  { id: 11, keyTrigger: 'R', label: 'Pluck A3', color: 'bg-purple-600', soundType: 'synth', baseFrequency: 220.00, pitchDecay: 0, volumeDecay: 0.5, waveform: 'sawtooth', noise: false, distortion: false },
+  
+  // Row 3 (Keys A-F): STREET FX
+  { id: 12, keyTrigger: 'A', label: 'Gun Cock', color: 'bg-blue-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.3, waveform: 'sawtooth', noise: true, distortion: false },
+  { id: 13, keyTrigger: 'S', label: 'Gun Blast', color: 'bg-blue-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.6, waveform: 'sawtooth', noise: true, distortion: true },
+  { id: 14, keyTrigger: 'D', label: 'Cop Siren', color: 'bg-blue-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 2.0, waveform: 'sine', noise: false, distortion: true },
+  { id: 15, keyTrigger: 'F', label: 'Vinyl Scratch', color: 'bg-blue-600', soundType: 'fx', baseFrequency: 800, pitchDecay: 0.1, volumeDecay: 0.15, waveform: 'triangle', noise: true, distortion: false },
+  
+  // Row 4 (Keys Z-V): BEAT LOOPS
+  { id: 16, keyTrigger: 'Z', label: 'Anthem Beat', color: 'bg-red-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 4, waveform: 'sawtooth', noise: false, distortion: true },
+  { id: 17, keyTrigger: 'X', label: 'Drill Beat', color: 'bg-red-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 4, waveform: 'square', noise: false, distortion: true },
+  { id: 18, keyTrigger: 'C', label: 'Trap Beat', color: 'bg-red-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 2.0, waveform: 'sawtooth', noise: true, distortion: true },
+  { id: 19, keyTrigger: 'V', label: 'Street Stomp', color: 'bg-red-600', soundType: 'fx', baseFrequency: 600, pitchDecay: 1.5, volumeDecay: 3.0, waveform: 'sine', noise: false, distortion: true },
+];
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
@@ -44,6 +54,7 @@ const App: React.FC = () => {
   const [isDjActive, setIsDjActive] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
+  const [drumPads, setDrumPads] = useState<DrumPadConfig[]>(DEFAULT_PADS);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -69,6 +80,7 @@ const App: React.FC = () => {
     isDjActive,
     generatedTracks,
     isOnline,
+    drumPads,
     setCurrentView,
     setClonedVoices,
     setElevenLabsKey,
@@ -78,6 +90,7 @@ const App: React.FC = () => {
     setCustomModel,
     setIsDjActive,
     setGeneratedTracks,
+    setDrumPads,
   };
 
 
@@ -87,6 +100,8 @@ const App: React.FC = () => {
         return <VoiceLab setClonedVoices={setClonedVoices} clonedVoices={clonedVoices} />;
       case AppView.Studio:
         return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
+      case AppView.DrumMachine:
+        return <DrumMachine drumPads={drumPads} setDrumPads={setDrumPads} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} defaultPads={DEFAULT_PADS} />;
       case AppView.Chat:
         return <Chat appController={appController} />;
       case AppView.ModelManager:

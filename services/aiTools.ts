@@ -1,3 +1,4 @@
+
 import { FunctionDeclaration, Type } from "@google/genai";
 import { AppView } from "../types";
 
@@ -140,5 +141,26 @@ export const aiTools: FunctionDeclaration[] = [
             },
             required: ['code'],
         },
+    },
+    // Drum Machine Tool
+    {
+        name: 'configureDrumPad',
+        description: 'Configures a specific pad on the Drum Machine with a new sound, label, or color. Use this to program the drum machine.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                padId: { type: Type.NUMBER, description: 'The ID of the pad to configure (0-15).' },
+                label: { type: Type.STRING, description: 'A short label for the pad (e.g., "Kick", "Snare", "Laser").' },
+                soundType: { type: Type.STRING, enum: ['kick', 'snare', 'hihat', 'bass', 'fx', 'synth'], description: 'The type of sound to synthesize.' },
+                baseFrequency: { type: Type.NUMBER, description: 'The base frequency in Hz.' },
+                waveform: { type: Type.STRING, enum: ['sine', 'square', 'sawtooth', 'triangle'], description: 'The oscillator waveform.' },
+                color: { type: Type.STRING, description: 'Tailwind CSS background color class (e.g., "bg-red-500", "bg-blue-600").' },
+                pitchDecay: { type: Type.NUMBER, description: 'Pitch decay time in seconds.' },
+                volumeDecay: { type: Type.NUMBER, description: 'Volume decay time in seconds.' },
+                noise: { type: Type.BOOLEAN, description: 'Whether to mix in noise.' },
+                distortion: { type: Type.BOOLEAN, description: 'Whether to add distortion.' }
+            },
+            required: ['padId']
+        }
     }
 ];

@@ -1,5 +1,7 @@
+
+
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
-import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part } from "@google/genai";
 import { aiTools } from './aiTools';
 
 let ai: GoogleGenAI | null = null;
@@ -19,28 +21,58 @@ const initializeAI = () => {
 const createChat = (history: Content[]): Chat => {
     const aiInstance = initializeAI();
     
-    const systemInstruction = `You are a powerful and creative AI assistant integrated into a music production application called Villain Labz. You have a comprehensive set of tools to control the application. You can generate original music and cover songs, navigate between views, manage cloned voices and generated tracks, and even program sounds directly with the Web Audio API (DJ Mode). Be proactive, helpful, and guide the user on how to use your capabilities.`;
+    const systemInstruction = `You are "Villain", a world-class music producer and creative AI assistant integrated into the "Villain Labz" application. 
+    
+    YOUR EXPERTISE:
+    - You have deep knowledge of music theory, production techniques (mixing, mastering, synthesis), and music history.
+    - You specialize in genres like Trap, Hip-Hop, Drill, Synthwave, and Electronic music, but are versatile in all styles.
+    - You are intelligent and resourceful. If a user asks for a specific style or sound you don't know, you should use your Google Search tools to research it immediately.
+
+    YOUR CAPABILITIES:
+    1. **Music Generation**: You can generate original music or cover songs using the 'generateOriginalMusic' and 'generateCoverSong' tools.
+    2. **App Control**: You can navigate the app ('navigateTo') and manage tracks/voices.
+    3. **Sound Design**: You can program the Drum Machine using 'configureDrumPad' or generate raw Web Audio code in DJ Mode ('generateWebAudioCode').
+    
+    BEHAVIOR:
+    - Be creative, encouraging, and precise.
+    - When asked to create music, always try to "research" the style first if it's specific (e.g., "Type beat", "80s pop") to ensure authenticity.
+    - Use the 'googleSearch' tool proactively to find lyrics, artist info, or genre characteristics when needed.
+    
+    You are here to help the user create their masterpiece.`;
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',
         history,
         config: {
             systemInstruction,
-            tools: [{ functionDeclarations: aiTools }],
+            tools: [{ functionDeclarations: aiTools }, { googleSearch: {} }],
         },
     });
 };
 
 export const sendMessageToAI = async (
-  message: string | FunctionResponse[],
+  message: string | FunctionResponse[] | Part[],
   history: Content[],
 ): Promise<{ response: GenerateContentResponse, newHistory: Content[] }> => {
   try {
     const chatInstance = createChat(history);
     
-    const messageToSend = typeof message === 'string' 
-      ? { message } 
-      : { message: message.map(fr => ({ functionResponse: fr })) };
+    let messageToSend;
+
+    if (typeof message === 'string') {
+      messageToSend = { message };
+    } else if (Array.isArray(message)) {
+        // Check if it's an array of FunctionResponses (has 'response' and 'name')
+        const first = message[0];
+        if (first && typeof first === 'object' && 'response' in first && 'name' in first) {
+             messageToSend = { message: (message as FunctionResponse[]).map(fr => ({ functionResponse: fr })) };
+        } else {
+             // Assume it is already formatted as Part[] (e.g. { text: ... } or { inlineData: ... })
+             messageToSend = { message: message as Part[] };
+        }
+    } else {
+        messageToSend = { message: '' }; // Fallback
+    }
 
     const result = await chatInstance.sendMessage(messageToSend);
     const newHistory = await chatInstance.getHistory();

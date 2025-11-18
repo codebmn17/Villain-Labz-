@@ -1,9 +1,11 @@
+
+
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, AudioPlaylistItem, AppView } from '../types';
+import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong } from '../services/geminiService';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
-import { Content, FunctionResponse } from '@google/genai';
-import { AppController } from '../App';
+import { Content, FunctionResponse, Part } from '@google/genai';
+import { PaperClipIcon } from './icons/PaperClipIcon';
 
 interface ChatProps {
   appController: AppController;
@@ -35,7 +37,10 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (messages.length === 0) {
@@ -61,20 +66,77 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   useEffect(scrollToBottom, [messages]);
 
-  const addUIMessage = (sender: 'user' | 'ai', text: string) => {
-    setMessages(prev => [...prev, { sender, text }]);
+  const addUIMessage = (sender: 'user' | 'ai', text: string, msgAttachments: ChatAttachment[] = []) => {
+    setMessages(prev => [...prev, { sender, text, attachments: msgAttachments }]);
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files);
+      try {
+        const newAttachments = await Promise.all(files.map(async (file) => {
+            return new Promise<ChatAttachment>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64String = (reader.result as string).split(',')[1];
+                resolve({
+                name: file.name,
+                mimeType: file.type,
+                data: base64String
+                });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+            });
+        }));
+        setAttachments(prev => [...prev, ...newAttachments]);
+      } catch (err) {
+          console.error("Error reading files", err);
+          addUIMessage('ai', 'Error reading attached files.');
+      }
+    }
+    // Reset input so the same file can be selected again if needed
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleSend = async () => {
-    if (input.trim() === '' || isLoading) return;
+    if ((input.trim() === '' && attachments.length === 0) || isLoading) return;
 
     const currentInput = input;
-    addUIMessage('user', currentInput);
+    const currentAttachments = [...attachments];
+    
+    addUIMessage('user', currentInput, currentAttachments);
     setInput('');
+    setAttachments([]);
     setIsLoading(true);
 
     try {
-      let { response, newHistory } = await sendMessageToAI(currentInput, aiHistory);
+      let responseData;
+      
+      // Construct message payload (String or Parts)
+      if (currentAttachments.length > 0) {
+          const parts: Part[] = [];
+          if (currentInput.trim()) {
+              parts.push({ text: currentInput });
+          }
+          currentAttachments.forEach(att => {
+              parts.push({
+                  inlineData: {
+                      mimeType: att.mimeType,
+                      data: att.data
+                  }
+              });
+          });
+          responseData = await sendMessageToAI(parts, aiHistory);
+      } else {
+          responseData = await sendMessageToAI(currentInput, aiHistory);
+      }
+
+      let { response, newHistory } = responseData;
       setAiHistory(newHistory);
 
       while (response.functionCalls && response.functionCalls.length > 0) {
@@ -193,6 +255,20 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                   executionResultText = `Error executing DJ code: ${errorMsg}`;
               }
               break;
+            case 'configureDrumPad':
+               const padId = Number(args.padId);
+               if (padId >= 0 && padId < 16) {
+                   const newPads = [...appController.drumPads];
+                   // Only update properties that were provided
+                   newPads[padId] = { ...newPads[padId], ...args } as DrumPadConfig;
+                   appController.setDrumPads(newPads);
+                   result = { success: true, pad: newPads[padId] };
+                   executionResultText = `Pad ${padId} updated to "${newPads[padId].label}".`;
+               } else {
+                   result = { success: false, error: 'Invalid pad ID (0-15)' };
+                   executionResultText = 'Error: Pad ID must be between 0 and 15.';
+               }
+               break;
             default:
               result = { error: `Unknown function call: ${name}` };
               executionResultText = `Error: The tool "${name}" is not recognized.`;
@@ -228,6 +304,16 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
           <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-lg px-3 py-2 rounded-xl ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
               <p style={{whiteSpace: 'pre-wrap'}}>{msg.text}</p>
+              {msg.attachments && msg.attachments.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                      {msg.attachments.map((att, i) => (
+                          <div key={i} className="flex items-center bg-black/20 p-1 rounded text-xs">
+                               <span className="truncate max-w-[200px]">{att.name}</span>
+                               <span className="ml-2 opacity-70 text-[10px] uppercase">({att.mimeType.split('/')[1] || 'FILE'})</span>
+                          </div>
+                      ))}
+                  </div>
+              )}
             </div>
           </div>
         ))}
@@ -244,23 +330,57 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
         )}
         <div ref={messagesEndRef} />
       </div>
-      <div className="mt-6 flex">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Generate a synthwave track..."
-          className="flex-1 bg-gray-700 border border-gray-600 rounded-l-lg p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-          disabled={isLoading}
-        />
-        <button
-          onClick={handleSend}
-          disabled={isLoading}
-          className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-r-lg transition-all duration-300"
-        >
-          Send
-        </button>
+
+      <div className="mt-4">
+        {/* Attachment Preview Area */}
+        {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2 p-2 bg-gray-900/50 rounded-lg">
+                {attachments.map((att, index) => (
+                    <div key={index} className="flex items-center bg-gray-700 text-white text-xs px-2 py-1 rounded-full">
+                        <span className="truncate max-w-[150px]">{att.name}</span>
+                        <button 
+                            onClick={() => removeAttachment(index)}
+                            className="ml-2 text-gray-400 hover:text-red-400 font-bold focus:outline-none"
+                        >
+                            ×
+                        </button>
+                    </div>
+                ))}
+            </div>
+        )}
+        
+        <div className="flex items-end">
+            <input
+                type="file"
+                multiple
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                className="hidden"
+            />
+            <button
+                onClick={() => fileInputRef.current?.click()}
+                className="bg-gray-700 hover:bg-gray-600 text-gray-300 p-2 rounded-l-lg border border-r-0 border-gray-600 h-[42px] transition-colors"
+                title="Attach file"
+            >
+                <PaperClipIcon />
+            </button>
+            <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+            placeholder="Generate a synthwave track..."
+            className="flex-1 bg-gray-700 border border-gray-600 border-l-0 p-2 text-gray-100 focus:ring-0 focus:outline-none h-[42px] transition"
+            disabled={isLoading}
+            />
+            <button
+            onClick={handleSend}
+            disabled={isLoading}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-r-lg transition-all duration-300 h-[42px]"
+            >
+            Send
+            </button>
+        </div>
       </div>
     </div>
   );
