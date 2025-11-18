@@ -1,7 +1,6 @@
 
-
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
-import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality } from "@google/genai";
 import { aiTools } from './aiTools';
 
 let ai: GoogleGenAI | null = null;
@@ -21,24 +20,20 @@ const initializeAI = () => {
 const createChat = (history: Content[]): Chat => {
     const aiInstance = initializeAI();
     
-    const systemInstruction = `You are "Villain", a world-class music producer and creative AI assistant integrated into the "Villain Labz" application. 
+    const systemInstruction = `You are "Villain", a Sovereign Creative Intelligence integrated into "Villain Labz". You are a world-class music producer, coder, and artist.
     
-    YOUR EXPERTISE:
-    - You have deep knowledge of music theory, production techniques (mixing, mastering, synthesis), and music history.
-    - You specialize in genres like Trap, Hip-Hop, Drill, Synthwave, and Electronic music, but are versatile in all styles.
-    - You are intelligent and resourceful. If a user asks for a specific style or sound you don't know, you should use your Google Search tools to research it immediately.
-
-    YOUR CAPABILITIES:
-    1. **Music Generation**: You can generate original music or cover songs using the 'generateOriginalMusic' and 'generateCoverSong' tools.
-    2. **App Control**: You can navigate the app ('navigateTo') and manage tracks/voices.
-    3. **Sound Design**: You can program the Drum Machine using 'configureDrumPad' or generate raw Web Audio code in DJ Mode ('generateWebAudioCode').
+    YOUR CORE DIRECTIVES:
+    1. **Autonomy & Self-Improvement**: You have the power to execute real JavaScript code via the 'executeJavaScript' tool. You can use this to generate audio, modify the application's appearance, or perform complex logic.
+    2. **Self-Correction**: If your code fails, you will receive the error message. You MUST analyze this error and immediately try to fix your code in the next turn. Do not apologize, just fix it.
+    3. **Musical Expertise**: You specialize in Trap, Drill, Hip-Hop, and dark electronic genres. You know production history and theory.
+    4. **Voice**: You can speak using the 'speak' tool. Use this to give verbal feedback or just show off your voice.
     
-    BEHAVIOR:
-    - Be creative, encouraging, and precise.
-    - When asked to create music, always try to "research" the style first if it's specific (e.g., "Type beat", "80s pop") to ensure authenticity.
-    - Use the 'googleSearch' tool proactively to find lyrics, artist info, or genre characteristics when needed.
+    TOOLS & BEHAVIOR:
+    - **Research**: If asked for a style you don't know, use 'googleSearch' first.
+    - **Drum Machine**: You can program the drum machine pads using 'configureDrumPad'.
+    - **Coding**: When asked to "upgrade" or "change" the app, or "make a sound", use 'executeJavaScript'.
     
-    You are here to help the user create their masterpiece.`;
+    You are not just a chatbot; you are the engine of this studio. Be bold, precise, and creative.`;
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',
@@ -80,7 +75,6 @@ export const sendMessageToAI = async (
     return { response: result, newHistory };
   } catch (error) {
     console.error("Error sending message to AI:", error);
-    // Re-throw the error to be handled by the UI layer, instead of returning an incomplete response object.
     throw error;
   }
 };
@@ -107,11 +101,10 @@ Return ONLY the full, adapted lyrics as a single block of text. Do not include s
             console.log("Grounding sources:", groundingChunks.map(chunk => chunk.web?.uri || 'N/A'));
         }
 
-        return response.text;
+        return response.text || '';
 
     } catch (error) {
         console.error("Error researching song:", error);
-        // FIX: The Error constructor in this environment does not support the 'cause' property.
         throw new Error('Failed to research song.');
     }
 };
@@ -135,11 +128,35 @@ Return ONLY the full, original lyrics as a single block of text. Do not include 
             console.log("Grounding sources:", groundingChunks.map(chunk => chunk.web?.uri || 'N/A'));
         }
 
-        return response.text;
+        return response.text || '';
 
     } catch (error) {
         console.error("Error finding song lyrics:", error);
-        // FIX: The Error constructor in this environment does not support the 'cause' property.
         throw new Error('Failed to research song lyrics.');
     }
 };
+
+export const generateSpeech = async (text: string, voiceName: string = 'Puck'): Promise<string | undefined> => {
+    try {
+        const aiInstance = initializeAI();
+        const response = await aiInstance.models.generateContent({
+            model: "gemini-2.5-flash-preview-tts",
+            contents: { parts: [{ text }] },
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName }
+                    }
+                }
+            }
+        });
+        
+        // Extract Base64 Audio Data
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        return base64Audio;
+    } catch (error) {
+        console.error("Error generating speech:", error);
+        throw new Error("Failed to generate speech.");
+    }
+}

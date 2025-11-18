@@ -127,20 +127,33 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['isActive']
         }
     },
-    // Existing DJ Tool
+    // Code Execution & Self Improvement
     {
-        name: 'generateWebAudioCode',
-        description: "Generates and executes JavaScript code using the Web Audio API to create a sound or beat. Call this when the user asks to create a sound, program a beat, or generate an audio effect. The code must be self-contained and executable in a browser environment.",
+        name: 'executeJavaScript',
+        description: "Executes raw JavaScript code in the browser context. Use this to: 1. Generate audio using Web Audio API. 2. Manipulate the DOM/UI. 3. Perform complex calculations. 4. 'Upgrade' the app by injecting new behavior. access 'appController' to modify state. If the code fails, you will receive the error message; use it to debug and correct your code.",
         parameters: {
             type: Type.OBJECT,
             properties: {
                 code: {
                     type: Type.STRING,
-                    description: "The JavaScript code to execute. For example: `const audioCtx = new (window.AudioContext || window.webkitAudioContext)(); const oscillator = audioCtx.createOscillator(); oscillator.type = 'sine'; oscillator.frequency.setValueAtTime(440, audioCtx.currentTime); oscillator.connect(audioCtx.destination); oscillator.start(); oscillator.stop(audioCtx.currentTime + 1); return 'Sine wave at 440Hz played for 1 second.';`",
+                    description: "The JavaScript code to execute. It has access to 'appController', 'window', and 'document'. Return a string result if needed.",
                 },
             },
             required: ['code'],
         },
+    },
+    // TTS
+    {
+        name: 'speak',
+        description: "Synthesizes speech from text using a high-quality AI voice. Use this to talk to the user, announce events, or just be 'Villain'.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                text: { type: Type.STRING, description: "The text to speak." },
+                voiceName: { type: Type.STRING, enum: ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'], description: "The voice persona to use. Defaults to 'Puck' (Villain's default)." }
+            },
+            required: ['text']
+        }
     },
     // Drum Machine Tool
     {

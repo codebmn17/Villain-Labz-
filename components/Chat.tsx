@@ -1,8 +1,7 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech } from '../services/geminiService';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -13,6 +12,42 @@ interface ChatProps {
 
 const UI_HISTORY_KEY = 'villain_labz_ui_history';
 const AI_HISTORY_KEY = 'villain_labz_ai_history';
+
+// Helper to decode Gemini's PCM audio (24kHz, mono, f32le implied usually but standard example assumes headerless handling or base64 decode)
+// Updated to standard Base64 decode + AudioContext play
+async function playEncodedAudio(base64String: string) {
+    try {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+        
+        // Convert Base64 to Uint8Array
+        const binaryString = atob(base64String);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // The data is raw PCM, not a WAV file. We need to put it into an AudioBuffer manually.
+        // Gemini TTS returns raw PCM 16-bit or 32-float? 
+        // Usually 24kHz. Let's try treating it as raw PCM data.
+        // Typically standard is 16-bit Little Endian for these streams if not specified otherwise.
+        
+        const dataInt16 = new Int16Array(bytes.buffer);
+        const buffer = audioContext.createBuffer(1, dataInt16.length, 24000);
+        const channelData = buffer.getChannelData(0);
+        for(let i=0; i<dataInt16.length; i++) {
+            channelData[i] = dataInt16[i] / 32768.0;
+        }
+        
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        source.start();
+    } catch (e) {
+        console.error("Error playing audio:", e);
+    }
+}
+
 
 const Chat: React.FC<ChatProps> = ({ appController }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -44,7 +79,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   useEffect(() => {
     if (messages.length === 0) {
-      addUIMessage('ai', "I'm your creative AI assistant. I can generate music, manage your tracks, and control the app. What should we create?");
+      addUIMessage('ai', "I am Villain. Your sovereign creative intelligence. I can build, destroy, and create. What is our mission?");
     }
   }, []);
 
@@ -74,11 +109,16 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
       try {
-        const newAttachments = await Promise.all(files.map(async (file) => {
+        const newAttachments = await Promise.all(files.map(async (file: File) => {
             return new Promise<ChatAttachment>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
-                const base64String = (reader.result as string).split(',')[1];
+                const res = reader.result as string;
+                if (!res) {
+                    reject(new Error("Failed to read file"));
+                    return;
+                }
+                const base64String = res.split(',')[1];
                 resolve({
                 name: file.name,
                 mimeType: file.type,
@@ -141,7 +181,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
       while (response.functionCalls && response.functionCalls.length > 0) {
         const functionCalls = response.functionCalls;
-        addUIMessage('ai', `Executing tools: ${functionCalls.map(fc => fc.name).join(', ')}...`);
+        // Only show "Executing tools" if it's a long running task or significant
+        // addUIMessage('ai', `Villain is thinking... (${functionCalls.map(fc => fc.name).join(', ')})`);
         
         const toolResponses: FunctionResponse[] = [];
 
@@ -186,7 +227,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                 };
                 appController.setGeneratedTracks([...appController.generatedTracks, newTrack]);
                 result = { success: true, trackId: newTrack.id, title: newTrack.title };
-                executionResultText = `Successfully generated track: "${newTrack.title}". You can find it in Storage.`;
+                executionResultText = `Successfully generated track: "${newTrack.title}".`;
               } catch (e) {
                 const errorMsg = e instanceof Error ? e.message : "Unknown generation error";
                 result = { success: false, error: errorMsg };
@@ -197,15 +238,15 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               const voices = appController.clonedVoices;
               result = voices.map(v => ({ id: v.id, name: v.name }));
               executionResultText = voices.length > 0
-                ? `Found ${voices.length} voices: ${voices.map(v => `"${v.name}" (ID: ${v.id})`).join(', ')}.`
-                : 'No cloned voices found. Go to the Voice Lab to create one.';
+                ? `Found ${voices.length} voices.`
+                : 'No cloned voices found.';
               break;
             case 'listGeneratedTracks':
               const tracks = appController.generatedTracks;
               result = tracks.map(t => ({ id: t.id, title: t.title, artist: t.artist }));
               executionResultText = tracks.length > 0
-                ? `Found ${tracks.length} tracks: ${tracks.map(t => `"${t.title}" (ID: ${t.id})`).join(', ')}.`
-                : 'No tracks have been generated yet.';
+                ? `Found ${tracks.length} tracks.`
+                : 'No tracks found.';
               break;
             case 'deleteGeneratedTrack':
               const trackToDelete = appController.generatedTracks.find(t => t.id === args.trackId);
@@ -219,24 +260,16 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               }
               break;
             case 'setElevenLabsApiKey':
-              appController.setElevenLabsKey(args.apiKey as string);
-              result = { success: true };
-              executionResultText = `ElevenLabs API key has been set.`;
-              break;
             case 'setOpenAIApiKey':
-              appController.setOpenAIKey(args.apiKey as string);
-              result = { success: true };
-              executionResultText = `OpenAI API key has been set.`;
-              break;
             case 'setClaudeApiKey':
-              appController.setClaudeKey(args.apiKey as string);
-              result = { success: true };
-              executionResultText = `Claude API key has been set.`;
-              break;
             case 'setNinjaApiKey':
-              appController.setNinjaKey(args.apiKey as string);
+              // Simplified setter logic
+               if(name === 'setElevenLabsApiKey') appController.setElevenLabsKey(args.apiKey as string);
+               if(name === 'setOpenAIApiKey') appController.setOpenAIKey(args.apiKey as string);
+               if(name === 'setClaudeApiKey') appController.setClaudeKey(args.apiKey as string);
+               if(name === 'setNinjaApiKey') appController.setNinjaKey(args.apiKey as string);
               result = { success: true };
-              executionResultText = `Ninja AI API key has been set.`;
+              executionResultText = `API Key updated successfully.`;
               break;
             case 'setDjMode':
               const isActive = args.isActive as boolean;
@@ -244,37 +277,70 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               result = { success: true, status: isActive };
               executionResultText = `DJ Mode is now ${isActive ? 'activated' : 'deactivated'}.`;
               break;
-            case 'generateWebAudioCode':
+            case 'executeJavaScript':
                try {
-                  const func = new Function(String(args.code));
-                  result = func();
-                  executionResultText = `DJ code executed. AI response: "${String(result)}"`;
+                  // Providing context to the executed code
+                  const code = String(args.code);
+                  // We wrap in a promise to handle async code if necessary, though new Function is sync.
+                  // We pass 'appController' so the AI can access the app state.
+                  const func = new Function('appController', 'window', 'document', `
+                      try {
+                          ${code}
+                      } catch(e) {
+                          return "Error: " + e.message;
+                      }
+                  `);
+                  const jsResult = func(appController, window, document);
+                  
+                  if (jsResult && typeof jsResult === 'string' && jsResult.startsWith("Error:")) {
+                      result = { success: false, error: jsResult };
+                      executionResultText = `Code execution failed: ${jsResult}. I will try to fix it.`;
+                  } else {
+                      result = { success: true, output: String(jsResult) };
+                      executionResultText = `Code executed successfully.`;
+                  }
               } catch (e) {
                   const errorMsg = e instanceof Error ? e.message : "Unknown code execution error";
-                  result = { error: errorMsg };
-                  executionResultText = `Error executing DJ code: ${errorMsg}`;
+                  result = { success: false, error: errorMsg };
+                  executionResultText = `Error executing code: ${errorMsg}`;
               }
               break;
             case 'configureDrumPad':
                const padId = Number(args.padId);
-               if (padId >= 0 && padId < 16) {
+               if (padId >= 0 && padId < 20) {
                    const newPads = [...appController.drumPads];
-                   // Only update properties that were provided
                    newPads[padId] = { ...newPads[padId], ...args } as DrumPadConfig;
                    appController.setDrumPads(newPads);
                    result = { success: true, pad: newPads[padId] };
                    executionResultText = `Pad ${padId} updated to "${newPads[padId].label}".`;
                } else {
-                   result = { success: false, error: 'Invalid pad ID (0-15)' };
-                   executionResultText = 'Error: Pad ID must be between 0 and 15.';
+                   result = { success: false, error: 'Invalid pad ID' };
+                   executionResultText = 'Error: Pad ID out of range.';
                }
                break;
+            case 'speak':
+                try {
+                    const text = args.text as string;
+                    const voice = (args.voiceName as string) || 'Puck';
+                    const audioData = await generateSpeech(text, voice);
+                    if (audioData) {
+                        playEncodedAudio(audioData);
+                        result = { success: true };
+                        // executionResultText = `(Speaking: "${text}")`;
+                    } else {
+                        result = { success: false, error: "No audio generated" };
+                    }
+                } catch (e) {
+                    result = { success: false, error: "TTS Failed" };
+                }
+                break;
             default:
               result = { error: `Unknown function call: ${name}` };
               executionResultText = `Error: The tool "${name}" is not recognized.`;
           }
 
-          addUIMessage('ai', executionResultText);
+          // Optional: Log tool usage for the user to see 'thought process'
+          // addUIMessage('ai', `Tool ${name}: ${executionResultText}`);
           toolResponses.push({ name, response: { result } });
         }
 
@@ -298,7 +364,11 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
-      <h2 className="text-3xl font-bold text-purple-400 mb-4">AI Assistant {appController.isDjActive && '(DJ Mode)'}</h2>
+      <div className="flex items-center justify-between mb-4">
+         <h2 className="text-3xl font-bold text-purple-400">Villain AI {appController.isDjActive && '(Sovereign Mode)'}</h2>
+         <div className="text-xs text-gray-500 font-mono">GEMINI 2.5 FLASH</div>
+      </div>
+      
       <div className="flex-1 overflow-y-auto pr-4 space-y-4">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -369,7 +439,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Generate a synthwave track..."
+            placeholder="Ask Villain to generate a beat or upgrade the app..."
             className="flex-1 bg-gray-700 border border-gray-600 border-l-0 p-2 text-gray-100 focus:ring-0 focus:outline-none h-[42px] transition"
             disabled={isLoading}
             />
