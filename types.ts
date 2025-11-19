@@ -63,6 +63,13 @@ export interface DrumKit {
   pads: DrumPadConfig[];
 }
 
+export interface SequencerPattern {
+  id: string;
+  name: string;
+  bpm: number;
+  grid: Record<number, boolean[]>; // PadId -> [16 steps]
+}
+
 export interface AppController {
   // State
   currentView: AppView;

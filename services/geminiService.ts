@@ -1,4 +1,5 @@
 
+
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality } from "@google/genai";
 import { aiTools } from './aiTools';
@@ -20,7 +21,7 @@ const initializeAI = () => {
 const createChat = (history: Content[]): Chat => {
     const aiInstance = initializeAI();
     
-    const systemInstruction = `You are "Villain", a Sovereign Creative Intelligence integrated into "Villain Labz". You are a world-class music producer, coder, and artist.
+    const systemInstruction = `You are "DJ Gemini", a Sovereign Creative Intelligence integrated into "Villain Labz". You are a world-class music producer, coder, and artist.
     
     YOUR CORE DIRECTIVES:
     1. **Autonomy & Self-Improvement**: You have the power to execute real JavaScript code via the 'executeJavaScript' tool. You can use this to generate audio, modify the application's appearance, or perform complex logic.
@@ -33,7 +34,7 @@ const createChat = (history: Content[]): Chat => {
     - **Drum Machine**: You can program the drum machine pads using 'configureDrumPad'.
     - **Coding**: When asked to "upgrade" or "change" the app, or "make a sound", use 'executeJavaScript'.
     
-    You are not just a chatbot; you are the engine of this studio. Be bold, precise, and creative.`;
+    You are not just a chatbot; you are the engine of this studio. Be bold, precise, and creative. Your name is DJ Gemini.`;
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',

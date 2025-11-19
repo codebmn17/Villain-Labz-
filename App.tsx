@@ -36,11 +36,11 @@ const DEFAULT_PADS: DrumPadConfig[] = [
   { id: 14, keyTrigger: 'D', label: 'Cop Siren', color: 'bg-blue-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 2.0, waveform: 'sine', noise: false, distortion: true },
   { id: 15, keyTrigger: 'F', label: 'Vinyl Scratch', color: 'bg-blue-600', soundType: 'fx', baseFrequency: 800, pitchDecay: 0.1, volumeDecay: 0.15, waveform: 'triangle', noise: true, distortion: false },
   
-  // Row 4 (Keys Z-V): BEAT LOOPS
-  { id: 16, keyTrigger: 'Z', label: 'Anthem Beat', color: 'bg-red-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 4, waveform: 'sawtooth', noise: false, distortion: true },
-  { id: 17, keyTrigger: 'X', label: 'Drill Beat', color: 'bg-red-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 4, waveform: 'square', noise: false, distortion: true },
-  { id: 18, keyTrigger: 'C', label: 'Trap Beat', color: 'bg-red-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 2.0, waveform: 'sawtooth', noise: true, distortion: true },
-  { id: 19, keyTrigger: 'V', label: 'Street Stomp', color: 'bg-red-600', soundType: 'fx', baseFrequency: 600, pitchDecay: 1.5, volumeDecay: 3.0, waveform: 'sine', noise: false, distortion: true },
+  // Row 4 (Keys Z-V): FULL LENGTH 4-BAR LOOPS
+  { id: 16, keyTrigger: 'Z', label: 'Chopper Speed', color: 'bg-red-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: false, distortion: true },
+  { id: 17, keyTrigger: 'X', label: 'Shady Dirge', color: 'bg-red-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'square', noise: false, distortion: true },
+  { id: 18, keyTrigger: 'C', label: 'Detroit Rock', color: 'bg-red-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: true, distortion: true },
+  { id: 19, keyTrigger: 'V', label: 'Worldwide', color: 'bg-red-600', soundType: 'fx', baseFrequency: 600, pitchDecay: 1.5, volumeDecay: 8, waveform: 'sine', noise: false, distortion: true },
 ];
 
 const App: React.FC = () => {

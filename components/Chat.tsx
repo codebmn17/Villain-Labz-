@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech } from '../services/geminiService';
@@ -79,7 +81,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   useEffect(() => {
     if (messages.length === 0) {
-      addUIMessage('ai', "I am Villain. Your sovereign creative intelligence. I can build, destroy, and create. What is our mission?");
+      addUIMessage('ai', "I am DJ Gemini. Your sovereign creative intelligence. I can build, destroy, and create. What is our mission?");
     }
   }, []);
 
@@ -182,7 +184,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       while (response.functionCalls && response.functionCalls.length > 0) {
         const functionCalls = response.functionCalls;
         // Only show "Executing tools" if it's a long running task or significant
-        // addUIMessage('ai', `Villain is thinking... (${functionCalls.map(fc => fc.name).join(', ')})`);
+        // addUIMessage('ai', `DJ Gemini is thinking... (${functionCalls.map(fc => fc.name).join(', ')})`);
         
         const toolResponses: FunctionResponse[] = [];
 
@@ -216,7 +218,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                   const originalArgs = args as { lyrics: string; style: string; };
                   lyricsToGenerate = originalArgs.lyrics;
                   title = `AI Original - ${originalArgs.style.substring(0, 20)}`;
-                  artist = 'Villain Labz AI';
+                  artist = 'DJ Gemini AI';
                 }
 
                 addUIMessage('ai', 'Generating vocals & instrumentals...');
@@ -365,7 +367,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
       <div className="flex items-center justify-between mb-4">
-         <h2 className="text-3xl font-bold text-purple-400">Villain AI {appController.isDjActive && '(Sovereign Mode)'}</h2>
+         <h2 className="text-3xl font-bold text-purple-400">DJ Gemini {appController.isDjActive && '(Sovereign Mode)'}</h2>
          <div className="text-xs text-gray-500 font-mono">GEMINI 2.5 FLASH</div>
       </div>
       
@@ -439,7 +441,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask Villain to generate a beat or upgrade the app..."
+            placeholder="Ask DJ Gemini to drop a beat..."
             className="flex-1 bg-gray-700 border border-gray-600 border-l-0 p-2 text-gray-100 focus:ring-0 focus:outline-none h-[42px] transition"
             disabled={isLoading}
             />

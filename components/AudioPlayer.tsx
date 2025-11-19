@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { PlayIcon } from './icons/PlayIcon';
 import { StopIcon } from './icons/StopIcon';
@@ -77,10 +78,26 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
   useEffect(() => {
     const audio = audioRef.current;
     if (audio && currentTrack?.src) {
+        // If source changed, update it
         if (audio.src !== currentTrack.src) {
             audio.src = currentTrack.src;
         }
-        audio.play().then(() => setIsPlaying(true)).catch(console.error);
+        
+        // Play with error handling for interruptions
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => setIsPlaying(true))
+                .catch((error) => {
+                    // Ignore AbortError which happens when skipping tracks rapidly
+                    if (error.name === 'AbortError' || error.message.includes('interrupted')) {
+                        // console.log('Playback interrupted by new load');
+                    } else {
+                        console.error("Playback error:", error);
+                    }
+                    setIsPlaying(false);
+                });
+        }
     }
   }, [currentTrack]);
   
@@ -139,10 +156,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ playlist }) => {
     if (!audio) return;
     if (isPlaying) {
       audio.pause();
+      setIsPlaying(false);
     } else {
-      audio.play();
+      audio.play().then(() => setIsPlaying(true)).catch(console.error);
     }
-    setIsPlaying(!isPlaying);
   };
   
   const handleNext = () => {

@@ -1,12 +1,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { DrumPadConfig, AudioPlaylistItem, DrumKit } from '../types';
+import { DrumPadConfig, AudioPlaylistItem, DrumKit, SequencerPattern } from '../types';
 import { VolumeIcon } from './icons/VolumeIcon';
 import { PlayIcon } from './icons/PlayIcon';
 import { StopIcon } from './icons/StopIcon';
 import { SaveIcon } from './icons/SaveIcon';
 import { FolderOpenIcon } from './icons/FolderOpenIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import { SequencerIcon } from './icons/SequencerIcon';
+import { DrumIcon } from './icons/DrumIcon';
 
 function makeDistortionCurve(amount: number) {
   const k = typeof amount === 'number' ? amount : 50;
@@ -31,7 +33,23 @@ interface DrumMachineProps {
 const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, generatedTracks, setGeneratedTracks, defaultPads }) => {
   const [activePadId, setActivePadId] = useState<number | null>(null);
   const [volume, setVolume] = useState(0.8);
-  
+  const [viewMode, setViewMode] = useState<'PADS' | 'SEQUENCER'>('PADS');
+
+  // Sequencer State
+  const [bpm, setBpm] = useState(140);
+  const [isPlayingSequence, setIsPlayingSequence] = useState(false);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [sequencerGrid, setSequencerGrid] = useState<Record<number, boolean[]>>(() => {
+      const grid: Record<number, boolean[]> = {};
+      for (let i = 0; i < 20; i++) {
+          grid[i] = new Array(16).fill(false);
+      }
+      return grid;
+  });
+  const [savedPatterns, setSavedPatterns] = useState<SequencerPattern[]>([]);
+  const [isPatternModalOpen, setIsPatternModalOpen] = useState(false);
+  const [patternName, setPatternName] = useState('');
+
   // Main Recording State
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -65,19 +83,82 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const loopChunksRef = useRef<Blob[]>([]);
   const loopSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
 
-  // Load Kits from LocalStorage
+  // Sequencer Interval Ref
+  const sequencerIntervalRef = useRef<number | null>(null);
+
+  // Load Kits & Patterns from LocalStorage
   useEffect(() => {
     try {
       const storedKits = localStorage.getItem('villain_drum_kits');
       if (storedKits) {
         setSavedKits(JSON.parse(storedKits));
       }
+      const storedPatterns = localStorage.getItem('villain_sequencer_patterns');
+      if (storedPatterns) {
+          setSavedPatterns(JSON.parse(storedPatterns));
+      }
     } catch (e) {
-      console.error("Failed to load drum kits:", e);
+      console.error("Failed to load drum data:", e);
     }
   }, []);
 
-  // Kit Management Handlers
+  // --- Sequencer Logic ---
+
+  const toggleSequencerStep = (padId: number, stepIndex: number) => {
+      setSequencerGrid(prev => {
+          const newGrid = { ...prev };
+          const newRow = [...newGrid[padId]];
+          newRow[stepIndex] = !newRow[stepIndex];
+          newGrid[padId] = newRow;
+          return newGrid;
+      });
+  };
+
+  const clearSequencer = () => {
+      const emptyGrid: Record<number, boolean[]> = {};
+      for (let i = 0; i < 20; i++) {
+          emptyGrid[i] = new Array(16).fill(false);
+      }
+      setSequencerGrid(emptyGrid);
+  };
+
+  const randomizeSequencer = () => {
+      const randomGrid: Record<number, boolean[]> = {};
+      for (let i = 0; i < 20; i++) {
+          randomGrid[i] = new Array(16).fill(false).map(() => Math.random() > 0.85);
+      }
+      setSequencerGrid(randomGrid);
+  };
+  
+  const handleSavePattern = () => {
+      if (!patternName.trim()) return;
+      const newPattern: SequencerPattern = {
+          id: Date.now().toString(),
+          name: patternName.trim(),
+          bpm: bpm,
+          grid: sequencerGrid
+      };
+      const updatedPatterns = [...savedPatterns, newPattern];
+      setSavedPatterns(updatedPatterns);
+      localStorage.setItem('villain_sequencer_patterns', JSON.stringify(updatedPatterns));
+      setIsPatternModalOpen(false);
+      setPatternName('');
+  };
+  
+  const handleLoadPattern = (pattern: SequencerPattern) => {
+      setSequencerGrid(pattern.grid);
+      setBpm(pattern.bpm);
+  };
+
+  const handleDeletePattern = (id: string) => {
+     if (confirm('Delete this pattern?')) {
+         const updated = savedPatterns.filter(p => p.id !== id);
+         setSavedPatterns(updated);
+         localStorage.setItem('villain_sequencer_patterns', JSON.stringify(updated));
+     }
+  };
+
+  // --- Kit Management Handlers ---
   const handleSaveKit = () => {
     if (!newKitName.trim()) return;
     
@@ -411,7 +492,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     if (!ctx || !compressor) return;
 
     const now = ctx.currentTime;
-    const bpm = 140;
     const beat = 60 / bpm; 
 
     // Purple Row (8-11): Play Melodic Scale
@@ -420,64 +500,125 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         return;
     }
 
-    // Row 4: Generated Beat Loops (Keys Z-V)
-    if (padId === 16) { // Anthem Beat (Hard & Epic)
-        // Kick pattern: 1, 3.5
-        triggerSound('kick', now);
-        triggerSound('kick', now + beat * 2.5);
-        
-        // Snare: 3
-        triggerSound('snare', now + beat * 2);
-        
-        // Hats: 8ths
-        for(let i=0; i<8; i++) {
-            triggerSound('hihat', now + i * (beat/2));
-        }
-        // Brass hit on 1
-        playSynthNote(ctx, 146, now, 2, 'brass', compressor);
-        
-    } else if (padId === 17) { // Drill Beat (Syncopated)
-        // Kicks: 1, 1.5(ghost), 2.5, 4
-        triggerSound('kick', now);
-        // Ghost kick
-        // Snare: 3
-        triggerSound('snare', now + beat * 2);
-        triggerSound('snare', now + beat * 3.5); // Delayed hit
+    // Row 4: Generated Beat Loops (Keys Z-V) - Now 4 Bars Long (16 beats)
+    if (padId === 16) { // Chopper Speed (Tech N9ne Style - Triplets, Fast)
+        for(let bar = 0; bar < 4; bar++) {
+            const barStart = now + (bar * 4 * beat);
+            // Kick: 1, 1.66(trip), 2.33(trip), 3.5
+            triggerSound('kick', barStart);
+            triggerSound('kick', barStart + beat * 1.66);
+            triggerSound('kick', barStart + beat * 2.33);
+            triggerSound('kick', barStart + beat * 3.5);
+            
+            // Snare: 2, 4
+            triggerSound('snare', barStart + beat);
+            triggerSound('snare', barStart + beat * 3);
 
-        // Hats: Triplets
-        for(let i=0; i<12; i++) {
-             if(i % 3 !== 1) triggerSound('hihat', now + i * (beat/3));
+            // Hats: Triplets constant
+            for(let i=0; i<12; i++) {
+                 // Skip hat on snare hits for cleaner mix
+                 if (i !== 3 && i !== 9) {
+                    triggerSound('hihat', barStart + i * (beat/3), 0, 0.05);
+                 }
+            }
+            
+            // Brass hit on 1 of bar 1 and 3
+            if (bar % 2 === 0) {
+                playSynthNote(ctx, 146.83, barStart, 0.5, 'brass', compressor); // D3
+                playSynthNote(ctx, 73.42, barStart, 0.5, 'brass', compressor); // D2 (Octave)
+            }
+            // Fills on Bar 4
+            if (bar === 3) {
+                triggerSound('snare', barStart + beat * 3.25);
+                triggerSound('snare', barStart + beat * 3.5);
+                triggerSound('snare', barStart + beat * 3.75);
+                triggerSound('gunshot', barStart + beat * 3.8);
+            }
         }
-        // Slide bass on 1
-        playSynthNote(ctx, 55, now, 1, 'bell', compressor); // Placeholder for glide
         
-    } else if (padId === 18) { // Trap Beat (Standard)
-         // Kick: 1, 1.75, 2.5
-         triggerSound('kick', now);
-         triggerSound('kick', now + beat * 1.75);
-         triggerSound('kick', now + beat * 2.5);
-         
-         // Clap: 3
-         triggerSound('snare', now + beat * 2);
-         
-         // Fast Rolls
-         triggerSound('hihat', now);
-         triggerSound('hihat', now + beat * 0.25);
-         triggerSound('hihat', now + beat * 0.5);
-         triggerSound('hihat', now + beat * 0.75);
-         
-    } else if (padId === 19) { // Street Stomp (Boom Bap)
-         // Kick: 1, 1.5, 3.5
-         triggerSound('kick', now);
-         triggerSound('kick', now + beat * 0.5);
-         triggerSound('kick', now + beat * 2.5);
-         
-         // Snare: 2, 4
-         triggerSound('snare', now + beat);
-         triggerSound('snare', now + beat * 3);
-         
-         // Crash on 1
-         triggerSound('crash', now);
+    } else if (padId === 17) { // Shady Dirge (Eminem Style - Dark Piano, Minor)
+        // Chromatic Walkdown D -> C# -> C -> B
+        const notes = [293.66, 277.18, 261.63, 246.94]; // D4, C#4, C4, B3
+        
+        for(let bar = 0; bar < 4; bar++) {
+            const barStart = now + (bar * 4 * beat);
+            
+            // Drums: Boom Bap-ish but faster
+            triggerSound('kick', barStart);
+            triggerSound('kick', barStart + beat * 1.5);
+            triggerSound('kick', barStart + beat * 2.5);
+            triggerSound('snare', barStart + beat);
+            triggerSound('snare', barStart + beat * 3);
+            
+            // Hats: 8ths
+            for(let i=0; i<8; i++) {
+                triggerSound('hihat', barStart + i * (beat/2));
+            }
+
+            // Piano Melody (Quarter notes)
+            const note = notes[bar % 4];
+            playSynthNote(ctx, note, barStart, 0.4, 'piano', compressor);
+            playSynthNote(ctx, note, barStart + beat, 0.4, 'piano', compressor);
+            playSynthNote(ctx, note, barStart + beat * 2, 0.4, 'piano', compressor);
+            playSynthNote(ctx, note, barStart + beat * 3, 0.4, 'piano', compressor);
+            
+            // Bell accent on 1
+            playSynthNote(ctx, note * 2, barStart, 0.8, 'bell', compressor);
+        }
+        
+    } else if (padId === 18) { // Detroit Rock (Heavy Stomp)
+        for(let bar = 0; bar < 4; bar++) {
+             const barStart = now + (bar * 4 * beat);
+             
+             // Heavy Stomp Kick on 1, 3
+             triggerSound('kick', barStart);
+             triggerSound('kick', barStart + beat * 2);
+             
+             // Clap/Snare layer on 2, 4
+             triggerSound('snare', barStart + beat);
+             triggerSound('snare', barStart + beat * 3);
+             
+             // Guitar Riff (Power Chords simulation)
+             if (bar % 2 === 0) {
+                 playSynthNote(ctx, 146.83, barStart, 0.2, 'guitar', compressor); // D
+                 playSynthNote(ctx, 146.83, barStart + beat * 0.5, 0.2, 'guitar', compressor);
+                 playSynthNote(ctx, 174.61, barStart + beat * 1.5, 0.3, 'guitar', compressor); // F
+             } else {
+                 playSynthNote(ctx, 130.81, barStart, 0.2, 'guitar', compressor); // C
+                 playSynthNote(ctx, 130.81, barStart + beat * 0.5, 0.2, 'guitar', compressor);
+                 playSynthNote(ctx, 123.47, barStart + beat * 1.5, 0.3, 'guitar', compressor); // B
+             }
+        }
+
+    } else if (padId === 19) { // Worldwide (Orchestral Trap)
+         for(let bar = 0; bar < 4; bar++) {
+            const barStart = now + (bar * 4 * beat);
+            
+            // Trap Drums
+            triggerSound('kick', barStart);
+            triggerSound('kick', barStart + beat * 2.5); // Syncopated 
+            triggerSound('snare', barStart + beat * 2);
+            
+            // Fast Hat Rolls (32nd notes occasionally)
+            for(let i=0; i<16; i++) {
+                triggerSound('hihat', barStart + i * (beat/4));
+            }
+            
+            // Choir / Strings swells
+            if (bar === 0 || bar === 2) {
+                playSynthNote(ctx, 293.66, barStart, 2.0, 'string', compressor); // D Minor chord root
+                playSynthNote(ctx, 349.23, barStart, 2.0, 'string', compressor); // F
+            } else {
+                 playSynthNote(ctx, 277.18, barStart, 2.0, 'string', compressor); // C# (Harmonic minor tension)
+                 playSynthNote(ctx, 329.63, barStart, 2.0, 'string', compressor); // E
+            }
+            
+            // Chant/Voice FX simulation
+            if (bar === 3) {
+                playSynthNote(ctx, 440, barStart + beat * 3, 0.1, 'cowbell', compressor); // "Hey"
+                playSynthNote(ctx, 440, barStart + beat * 3.5, 0.1, 'cowbell', compressor); // "Hey"
+            }
+         }
     }
     // Fallbacks for Row 3 (FX) if handled here or via soundType check
     else if (padId >= 12 && padId <= 14) {
@@ -600,6 +741,39 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
   }, [drumPads, volume]);
 
+  // Sequencer Player Clock
+  useEffect(() => {
+      if (isPlayingSequence) {
+          // Calculate step time in ms (16th notes)
+          const stepTime = (60000 / bpm) / 4;
+          
+          sequencerIntervalRef.current = window.setInterval(() => {
+              setCurrentStep(prev => {
+                  const nextStep = (prev + 1) % 16;
+                  // Trigger sounds for next step
+                  drumPads.forEach(pad => {
+                      if (sequencerGrid[pad.id][nextStep]) {
+                          playPad(pad);
+                      }
+                  });
+                  return nextStep;
+              });
+          }, stepTime);
+      } else {
+          if (sequencerIntervalRef.current) {
+              clearInterval(sequencerIntervalRef.current);
+              sequencerIntervalRef.current = null;
+          }
+          setCurrentStep(0);
+      }
+
+      return () => {
+          if (sequencerIntervalRef.current) {
+              clearInterval(sequencerIntervalRef.current);
+          }
+      };
+  }, [isPlayingSequence, bpm, drumPads, sequencerGrid, playPad]);
+
   // Keyboard Mapping with Repeat Fix
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -636,7 +810,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         const newTrack: AudioPlaylistItem = {
           id: Date.now().toString(),
           title: `Drum Session ${new Date().toLocaleTimeString()}`,
-          artist: 'Villain Labz',
+          artist: 'DJ Gemini',
           src: url
         };
         setGeneratedTracks([...generatedTracks, newTrack]);
@@ -706,12 +880,30 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-full flex flex-col">
       <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
         <div>
-          <h2 className="text-3xl font-bold text-purple-400">Villain Drum Machine</h2>
+          <h2 className="text-3xl font-bold text-purple-400">DJ Gemini Drum Machine</h2>
           <p className="text-gray-400 text-sm">WebAudio Synthesis Engine | 5x4 Matrix</p>
         </div>
 
         {/* Controls & Kit Management */}
         <div className="flex items-center space-x-4 bg-gray-900/50 p-2 rounded-lg">
+          {/* View Toggle */}
+           <div className="flex bg-gray-800 rounded-lg p-1">
+              <button 
+                  onClick={() => setViewMode('PADS')}
+                  className={`p-2 rounded-md transition-colors ${viewMode === 'PADS' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  title="Pads View"
+              >
+                  <DrumIcon className="h-5 w-5" />
+              </button>
+              <button 
+                  onClick={() => setViewMode('SEQUENCER')}
+                  className={`p-2 rounded-md transition-colors ${viewMode === 'SEQUENCER' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  title="Sequencer View"
+              >
+                  <SequencerIcon className="h-5 w-5" />
+              </button>
+          </div>
+
           <div className="flex items-center space-x-2 border-r border-gray-700 pr-4">
               <VolumeIcon volume={volume} />
               <input 
@@ -768,31 +960,109 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         </div>
       </div>
 
-      {/* Pads Grid */}
-      <div className="grid grid-cols-4 gap-2 sm:gap-4 flex-1">
-        {drumPads.map((pad) => (
-          <button
-            key={pad.id}
-            onPointerDown={(e) => {
-                e.preventDefault(); // Fix double firing on mobile/hybrid
-                playPad(pad);
-            }}
-            className={`
-              relative rounded-xl transition-all duration-75 select-none flex flex-col items-center justify-center overflow-hidden
-              ${pad.color} 
-              ${activePadId === pad.id ? 'brightness-150 scale-95 shadow-[0_0_20px_rgba(255,255,255,0.5)]' : 'hover:brightness-110 shadow-lg'}
-              h-20 sm:h-auto
-            `}
-          >
-            <span className="absolute top-1 left-2 text-xs font-bold opacity-50">{pad.keyTrigger}</span>
-            <span className="font-bold text-sm sm:text-lg text-center leading-tight px-1 z-10 drop-shadow-md">{pad.label}</span>
-            {/* Visual indicator for sound type */}
-            <div className="absolute bottom-0 left-0 w-full h-1 bg-white opacity-20"></div>
-          </button>
-        ))}
-      </div>
+      {/* Main Content Area */}
+      {viewMode === 'PADS' ? (
+        <>
+          {/* Pads Grid */}
+          <div className="grid grid-cols-4 gap-2 sm:gap-4 flex-1">
+            {drumPads.map((pad) => (
+              <button
+                key={pad.id}
+                onPointerDown={(e) => {
+                    e.preventDefault(); // Fix double firing on mobile/hybrid
+                    playPad(pad);
+                }}
+                className={`
+                  relative rounded-xl transition-all duration-75 select-none flex flex-col items-center justify-center overflow-hidden touch-manipulation
+                  ${pad.color} 
+                  ${activePadId === pad.id ? 'brightness-150 scale-95 shadow-[0_0_20px_rgba(255,255,255,0.5)]' : 'hover:brightness-110 shadow-lg'}
+                  h-20 sm:h-auto
+                `}
+              >
+                <span className="absolute top-1 left-2 text-xs font-bold opacity-50">{pad.keyTrigger}</span>
+                <span className="font-bold text-sm sm:text-lg text-center leading-tight px-1 z-10 drop-shadow-md">{pad.label}</span>
+                {/* Visual indicator for sound type */}
+                <div className="absolute bottom-0 left-0 w-full h-1 bg-white opacity-20"></div>
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 text-center text-xs text-gray-500">
+            <p>Use Keyboard keys: 1-4, 5-8, Q-R, A-F, Z-V to trigger pads. Row 0 (Top) = Deep 808 Bass.</p>
+          </div>
+        </>
+      ) : (
+        /* Sequencer View */
+        <div className="flex-1 flex flex-col overflow-hidden bg-gray-900/50 rounded-xl border border-gray-700">
+             {/* Sequencer Toolbar */}
+             <div className="p-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                    <button 
+                        onClick={() => setIsPlayingSequence(!isPlayingSequence)}
+                        className={`flex items-center px-3 py-1 rounded-md font-bold text-sm ${isPlayingSequence ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}
+                    >
+                        {isPlayingSequence ? <StopIcon /> : <PlayIcon />}
+                        <span className="ml-1">{isPlayingSequence ? 'Stop' : 'Play'}</span>
+                    </button>
+                    <div className="flex items-center bg-gray-700 rounded px-2">
+                        <span className="text-xs text-gray-400 mr-2">BPM</span>
+                        <input 
+                            type="number" 
+                            value={bpm} 
+                            onChange={(e) => setBpm(Number(e.target.value))}
+                            className="w-12 bg-transparent text-white text-sm font-mono focus:outline-none"
+                        />
+                    </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                     <button onClick={clearSequencer} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded">Clear</button>
+                     <button onClick={randomizeSequencer} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded">Random</button>
+                     <div className="h-4 w-px bg-gray-600 mx-1"></div>
+                     <button onClick={() => setIsPatternModalOpen(true)} className="text-gray-400 hover:text-blue-400"><SaveIcon /></button>
+                     {savedPatterns.length > 0 && (
+                         <select 
+                            onChange={(e) => {
+                                const pattern = savedPatterns.find(p => p.id === e.target.value);
+                                if(pattern) handleLoadPattern(pattern);
+                                e.target.value = ''; // reset
+                            }}
+                            className="bg-gray-700 text-xs text-white rounded p-1 w-24"
+                         >
+                             <option value="">Load...</option>
+                             {savedPatterns.map(p => (
+                                 <option key={p.id} value={p.id}>{p.name}</option>
+                             ))}
+                         </select>
+                     )}
+                </div>
+             </div>
 
-      {/* Save Modal */}
+             {/* Sequencer Grid */}
+             <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                 {drumPads.map((pad) => (
+                     <div key={pad.id} className="flex items-center h-8">
+                         <div className={`w-24 flex-shrink-0 text-xs font-bold px-2 py-1 rounded-l-md truncate ${pad.color.replace('bg-', 'text-').replace('900', '300')}`}>
+                             {pad.label}
+                         </div>
+                         <div className="flex-1 flex space-x-1 bg-gray-800/50 p-1 rounded-r-md">
+                             {sequencerGrid[pad.id].map((isActive, stepIndex) => (
+                                 <button
+                                    key={stepIndex}
+                                    onClick={() => toggleSequencerStep(pad.id, stepIndex)}
+                                    className={`flex-1 rounded-sm transition-all duration-100 h-full
+                                        ${isActive ? pad.color : 'bg-gray-700'}
+                                        ${currentStep === stepIndex ? 'ring-2 ring-white ring-opacity-50 brightness-125' : ''}
+                                        ${stepIndex % 4 === 0 ? 'mr-1' : ''} 
+                                    `}
+                                 />
+                             ))}
+                         </div>
+                     </div>
+                 ))}
+             </div>
+        </div>
+      )}
+
+      {/* Save Kit Modal */}
       {isSaveModalOpen && (
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
               <div className="bg-gray-800 p-6 rounded-lg shadow-2xl border border-gray-600 w-80">
@@ -813,9 +1083,27 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           </div>
       )}
 
-      <div className="mt-4 text-center text-xs text-gray-500">
-        <p>Use Keyboard keys: 1-4, 5-8, Q-R, A-F, Z-V to trigger pads. Row 0 (Top) = Deep 808 Bass.</p>
-      </div>
+      {/* Save Pattern Modal */}
+      {isPatternModalOpen && (
+          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+              <div className="bg-gray-800 p-6 rounded-lg shadow-2xl border border-gray-600 w-80">
+                  <h3 className="text-xl font-bold text-white mb-4">Save Pattern</h3>
+                  <input 
+                    type="text" 
+                    placeholder="Pattern Name (e.g. Hard Beat 1)"
+                    value={patternName}
+                    onChange={(e) => setPatternName(e.target.value)}
+                    className="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white mb-4 focus:ring-2 focus:ring-purple-500"
+                    autoFocus
+                  />
+                  <div className="flex justify-end space-x-2">
+                      <button onClick={() => setIsPatternModalOpen(false)} className="px-4 py-2 text-gray-300 hover:text-white">Cancel</button>
+                      <button onClick={handleSavePattern} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">Save</button>
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };
