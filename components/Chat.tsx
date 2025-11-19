@@ -1,8 +1,6 @@
 
-
-
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment } from '../types';
+import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech } from '../services/geminiService';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
@@ -50,6 +48,35 @@ async function playEncodedAudio(base64String: string) {
     }
 }
 
+const getModelDisplayName = (model: AiModel) => {
+    switch (model) {
+        case 'openai': return 'OpenAI Assistant';
+        case 'claude': return 'Claude';
+        case 'ninja': return 'Ninja AI';
+        case 'gemini': 
+        default: return 'DJ Gemini';
+    }
+};
+
+const getModelVersionName = (model: AiModel) => {
+    switch (model) {
+        case 'openai': return 'GPT-4o';
+        case 'claude': return 'CLAUDE 3.5 SONNET';
+        case 'ninja': return 'STEALTH v2';
+        case 'gemini': 
+        default: return 'GEMINI 2.5 FLASH';
+    }
+};
+
+const getModelColor = (model: AiModel) => {
+     switch (model) {
+        case 'openai': return 'text-green-400';
+        case 'claude': return 'text-orange-400';
+        case 'ninja': return 'text-red-400';
+        case 'gemini': 
+        default: return 'text-purple-400';
+    }
+}
 
 const Chat: React.FC<ChatProps> = ({ appController }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -367,8 +394,12 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
       <div className="flex items-center justify-between mb-4">
-         <h2 className="text-3xl font-bold text-purple-400">DJ Gemini {appController.isDjActive && '(Sovereign Mode)'}</h2>
-         <div className="text-xs text-gray-500 font-mono">GEMINI 2.5 FLASH</div>
+         <div>
+             <h2 className={`text-3xl font-bold ${getModelColor(appController.activeModel)}`}>
+                {getModelDisplayName(appController.activeModel)} {appController.isDjActive && appController.activeModel === 'gemini' && '(Sovereign Mode)'}
+             </h2>
+             <div className="text-xs text-gray-500 font-mono">{getModelVersionName(appController.activeModel)}</div>
+         </div>
       </div>
       
       <div className="flex-1 overflow-y-auto pr-4 space-y-4">
@@ -441,7 +472,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Ask DJ Gemini to drop a beat..."
+            placeholder={`Ask ${getModelDisplayName(appController.activeModel)}...`}
             className="flex-1 bg-gray-700 border border-gray-600 border-l-0 p-2 text-gray-100 focus:ring-0 focus:outline-none h-[42px] transition"
             disabled={isLoading}
             />

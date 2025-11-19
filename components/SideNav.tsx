@@ -8,6 +8,7 @@ import { CogIcon } from './icons/CogIcon';
 import { SpotifyIcon } from './icons/SpotifyIcon';
 import { StorageIcon } from './icons/StorageIcon';
 import { DrumIcon } from './icons/DrumIcon';
+import { YouTubeIcon } from './icons/YouTubeIcon';
 
 interface SideNavProps {
   currentView: AppView;
@@ -53,6 +54,7 @@ const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView, isOnline
           <li><NavItem view={AppView.VoiceLab} currentView={currentView} setCurrentView={setCurrentView} icon={<MicIcon />} label="Voice Lab" /></li>
           <li><NavItem view={AppView.Studio} currentView={currentView} setCurrentView={setCurrentView} icon={<MusicIcon />} label="Studio" /></li>
           <li><NavItem view={AppView.DrumMachine} currentView={currentView} setCurrentView={setCurrentView} icon={<DrumIcon />} label="Drum Machine" /></li>
+          <li><NavItem view={AppView.YouTube} currentView={currentView} setCurrentView={setCurrentView} icon={<YouTubeIcon />} label="YouTube" /></li>
           <li><NavItem view={AppView.Chat} currentView={currentView} setCurrentView={setCurrentView} icon={<ChatIcon />} label="AI Chat" /></li>
           <li><NavItem view={AppView.ModelManager} currentView={currentView} setCurrentView={setCurrentView} icon={<CogIcon />} label="Models" /></li>
           <li><NavItem view={AppView.Storage} currentView={currentView} setCurrentView={setCurrentView} icon={<StorageIcon />} label="Storage" /></li>

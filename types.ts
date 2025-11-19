@@ -1,5 +1,4 @@
 
-
 export enum AppView {
   VoiceLab = 'VOICE_LAB',
   Studio = 'STUDIO',
@@ -8,12 +7,15 @@ export enum AppView {
   SpotifyConnect = 'SPOTIFY_CONNECT',
   Storage = 'STORAGE',
   DrumMachine = 'DRUM_MACHINE',
+  YouTube = 'YOUTUBE',
 }
 
 export enum StudioMode {
   Original = 'ORIGINAL',
   Cover = 'COVER',
 }
+
+export type AiModel = 'gemini' | 'openai' | 'claude' | 'ninja';
 
 export interface ClonedVoice {
   id: string;
@@ -42,6 +44,9 @@ export interface AudioPlaylistItem {
   src: string;
   title: string;
   artist: string;
+  createdAt?: number; // Timestamp
+  size?: number; // Bytes
+  type?: string; // 'wav' | 'mp3' etc
 }
 
 export type SoundType = 'kick' | 'snare' | 'hihat' | 'bass' | 'fx' | 'synth';
@@ -73,9 +78,18 @@ export interface SequencerPattern {
   grid: Record<number, boolean[]>; // PadId -> [16 steps]
 }
 
+export interface YouTubeResult {
+  id: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+  url: string;
+}
+
 export interface AppController {
   // State
   currentView: AppView;
+  activeModel: AiModel;
   clonedVoices: ClonedVoice[];
   elevenLabsKey: string;
   openAIKey: string;
@@ -88,6 +102,7 @@ export interface AppController {
   drumPads: DrumPadConfig[];
   // Setters
   setCurrentView: (view: AppView) => void;
+  setActiveModel: (model: AiModel) => void;
   setClonedVoices: (voices: ClonedVoice[]) => void;
   setElevenLabsKey: (key: string) => void;
   setOpenAIKey: (key: string) => void;
@@ -97,4 +112,7 @@ export interface AppController {
   setIsDjActive: (isActive: boolean) => void;
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
   setDrumPads: (pads: DrumPadConfig[]) => void;
+  // Navigation Props (Optional for data passing)
+  navProps?: any;
+  setNavProps?: (props: any) => void;
 }

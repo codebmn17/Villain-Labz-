@@ -5,10 +5,12 @@ import VoiceLab from './components/VoiceLab';
 import Studio from './components/Studio';
 import Chat from './components/Chat';
 import ModelManager from './components/ModelManager';
-import { AppView, ClonedVoice, AudioPlaylistItem, DrumPadConfig, AppController } from './types';
+import { AppView, ClonedVoice, AudioPlaylistItem, DrumPadConfig, AppController, AiModel } from './types';
 import SpotifyConnect from './components/SpotifyConnect';
 import Storage from './components/Storage';
 import DrumMachine from './components/DrumMachine';
+import YouTubeConnect from './components/YouTubeConnect';
+import { getAllTracksFromDB } from './services/storageService';
 
 // Hardcore Rap / Sub-Woofer Configuration (5x4 Grid)
 const DEFAULT_PADS: DrumPadConfig[] = [
@@ -45,6 +47,7 @@ const DEFAULT_PADS: DrumPadConfig[] = [
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>(AppView.Studio);
+  const [activeModel, setActiveModel] = useState<AiModel>('gemini');
   const [clonedVoices, setClonedVoices] = useState<ClonedVoice[]>([]);
   const [elevenLabsKey, setElevenLabsKey] = useState<string>('');
   const [openAIKey, setOpenAIKey] = useState<string>('');
@@ -55,8 +58,22 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
   const [drumPads, setDrumPads] = useState<DrumPadConfig[]>(DEFAULT_PADS);
+  
+  // Navigation Props (for passing data between views, e.g. YouTube -> Studio)
+  const [navProps, setNavProps] = useState<any>(null);
 
+  // Initial DB Load
   useEffect(() => {
+    const loadTracks = async () => {
+      try {
+        const tracks = await getAllTracksFromDB();
+        setGeneratedTracks(tracks);
+      } catch (e) {
+        console.error("Failed to load tracks from storage", e);
+      }
+    };
+    loadTracks();
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
@@ -71,6 +88,7 @@ const App: React.FC = () => {
 
   const appController: AppController = {
     currentView,
+    activeModel,
     clonedVoices,
     elevenLabsKey,
     openAIKey,
@@ -82,6 +100,7 @@ const App: React.FC = () => {
     isOnline,
     drumPads,
     setCurrentView,
+    setActiveModel,
     setClonedVoices,
     setElevenLabsKey,
     setOpenAIKey,
@@ -91,6 +110,8 @@ const App: React.FC = () => {
     setIsDjActive,
     setGeneratedTracks,
     setDrumPads,
+    navProps,
+    setNavProps,
   };
 
 
@@ -99,7 +120,13 @@ const App: React.FC = () => {
       case AppView.VoiceLab:
         return <VoiceLab setClonedVoices={setClonedVoices} clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} />;
       case AppView.Studio:
-        return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
+        return <Studio 
+          clonedVoices={clonedVoices} 
+          elevenLabsKey={elevenLabsKey} 
+          generatedTracks={generatedTracks} 
+          setGeneratedTracks={setGeneratedTracks}
+          initialCoverData={navProps?.coverData}
+        />;
       case AppView.DrumMachine:
         return <DrumMachine drumPads={drumPads} setDrumPads={setDrumPads} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} defaultPads={DEFAULT_PADS} />;
       case AppView.Chat:
@@ -107,6 +134,8 @@ const App: React.FC = () => {
       case AppView.ModelManager:
         return (
           <ModelManager
+            activeModel={activeModel}
+            setActiveModel={setActiveModel}
             elevenLabsKey={elevenLabsKey}
             setElevenLabsKey={setElevenLabsKey}
             openAIKey={openAIKey}
@@ -124,6 +153,11 @@ const App: React.FC = () => {
         return <Storage generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
       case AppView.SpotifyConnect:
         return <SpotifyConnect />;
+      case AppView.YouTube:
+        return <YouTubeConnect onImport={(title, artist) => {
+           setNavProps({ coverData: { title, artist } });
+           setCurrentView(AppView.Studio);
+        }} />;
       default:
         return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
     }

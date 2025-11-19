@@ -1,11 +1,15 @@
+
 import React, { useState } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
 import { AgentIcon } from './icons/AgentIcon';
 import { OpenAIIcon } from './icons/OpenAIIcon';
 import { ClaudeIcon } from './icons/ClaudeIcon';
 import { NinjaIcon } from './icons/NinjaIcon';
+import { AiModel } from '../types';
 
 interface ModelManagerProps {
+  activeModel: AiModel;
+  setActiveModel: (model: AiModel) => void;
   elevenLabsKey: string;
   setElevenLabsKey: (key: string) => void;
   openAIKey: string;
@@ -20,6 +24,8 @@ interface ModelManagerProps {
 }
 
 const ModelManager: React.FC<ModelManagerProps> = ({ 
+  activeModel,
+  setActiveModel,
   elevenLabsKey, 
   setElevenLabsKey,
   openAIKey,
@@ -50,7 +56,53 @@ const ModelManager: React.FC<ModelManagerProps> = ({
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in space-y-8">
       <div>
         <h2 className="text-3xl font-bold text-purple-400 mb-2">Model Manager</h2>
-        <p className="text-gray-400">Configure external models and AI agents to expand your creative toolkit.</p>
+        <p className="text-gray-400">Configure active intelligence, external models and AI agents.</p>
+      </div>
+
+      {/* Active Model Selector */}
+      <div className="p-4 bg-gray-700/50 rounded-lg border border-purple-500/30">
+        <h3 className="text-xl font-semibold text-white mb-4">Active Intelligence Model</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
+            <button 
+                onClick={() => setActiveModel('gemini')}
+                className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${activeModel === 'gemini' ? 'border-purple-500 bg-purple-900/20' : 'border-gray-600 bg-gray-800 hover:bg-gray-700'}`}
+            >
+                <div className="bg-white rounded-full p-1 mb-2">
+                     {/* Google G Logo / Gemini placeholder */}
+                     <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-500 to-red-500"></div>
+                </div>
+                <span className={`font-bold ${activeModel === 'gemini' ? 'text-purple-300' : 'text-gray-400'}`}>Gemini 2.5</span>
+                <span className="text-[10px] text-gray-500">Google</span>
+            </button>
+
+            <button 
+                onClick={() => setActiveModel('openai')}
+                className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${activeModel === 'openai' ? 'border-green-500 bg-green-900/20' : 'border-gray-600 bg-gray-800 hover:bg-gray-700'}`}
+            >
+                <OpenAIIcon className={`h-8 w-8 mb-2 ${activeModel === 'openai' ? 'text-green-400' : 'text-gray-500'}`} />
+                <span className={`font-bold ${activeModel === 'openai' ? 'text-green-300' : 'text-gray-400'}`}>GPT-4o</span>
+                <span className="text-[10px] text-gray-500">OpenAI</span>
+            </button>
+
+            <button 
+                onClick={() => setActiveModel('claude')}
+                className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${activeModel === 'claude' ? 'border-orange-500 bg-orange-900/20' : 'border-gray-600 bg-gray-800 hover:bg-gray-700'}`}
+            >
+                <ClaudeIcon className={`h-8 w-8 mb-2 ${activeModel === 'claude' ? 'text-orange-400' : 'text-gray-500'}`} />
+                <span className={`font-bold ${activeModel === 'claude' ? 'text-orange-300' : 'text-gray-400'}`}>Claude 3.5</span>
+                <span className="text-[10px] text-gray-500">Anthropic</span>
+            </button>
+
+            <button 
+                onClick={() => setActiveModel('ninja')}
+                className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${activeModel === 'ninja' ? 'border-red-500 bg-red-900/20' : 'border-gray-600 bg-gray-800 hover:bg-gray-700'}`}
+            >
+                <NinjaIcon className={`h-8 w-8 mb-2 ${activeModel === 'ninja' ? 'text-red-400' : 'text-gray-500'}`} />
+                <span className={`font-bold ${activeModel === 'ninja' ? 'text-red-300' : 'text-gray-400'}`}>Ninja v2</span>
+                <span className="text-[10px] text-gray-500">Stealth</span>
+            </button>
+        </div>
       </div>
 
       <div className="p-4 bg-gray-700/50 rounded-lg">

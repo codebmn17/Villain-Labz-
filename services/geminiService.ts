@@ -1,8 +1,8 @@
 
-
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
-import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality } from "@google/genai";
+import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';
+import { YouTubeResult } from "../types";
 
 let ai: GoogleGenAI | null = null;
 
@@ -118,11 +118,6 @@ Return ONLY the full, adapted lyrics as a single block of text. Do not include s
             },
         });
         
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (groundingChunks) {
-            console.log("Grounding sources:", groundingChunks.map(chunk => chunk.web?.uri || 'N/A'));
-        }
-
         return response.text || '';
 
     } catch (error) {
@@ -145,11 +140,6 @@ Return ONLY the full, original lyrics as a single block of text. Do not include 
             },
         });
         
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        if (groundingChunks) {
-            console.log("Grounding sources:", groundingChunks.map(chunk => chunk.web?.uri || 'N/A'));
-        }
-
         return response.text || '';
 
     } catch (error) {
@@ -157,6 +147,67 @@ Return ONLY the full, original lyrics as a single block of text. Do not include 
         throw new Error('Failed to research song lyrics.');
     }
 };
+
+export const analyzeSongMetadata = async (title: string, artist: string): Promise<{ bpm: number; style: string }> => {
+    try {
+        const aiInstance = initializeAI();
+        const prompt = `Find the BPM (tempo) and musical Genre/Style of the song "${title}" by "${artist}".
+        Return the result in strict JSON format with two keys: "bpm" (number) and "style" (string).
+        Example: {"bpm": 120, "style": "Pop Rock"}
+        `;
+
+        const response = await aiInstance.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json"
+            },
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No analysis returned");
+        
+        const json = JSON.parse(text);
+        return { bpm: Number(json.bpm), style: json.style };
+    } catch (error) {
+        console.error("Error analyzing song metadata:", error);
+        return { bpm: 120, style: "Unknown" }; // Fallback
+    }
+};
+
+export const searchYouTubeVideos = async (query: string): Promise<YouTubeResult[]> => {
+    try {
+         const aiInstance = initializeAI();
+         const prompt = `Search for YouTube videos matching the query: "${query}". 
+         Find 5 relevant videos (music videos, lyric videos, or live performances).
+         Return a JSON object containing an array "videos". Each item must have:
+         - "id" (simulate a unique string id)
+         - "title" (string)
+         - "channel" (string)
+         - "thumbnail" (string url, use a placeholder if unknown like 'https://placehold.co/320x180/red/white?text=Video')
+         - "url" (full youtube url)
+         
+         Use the googleSearch tool to find real titles and channels.`;
+
+         const response = await aiInstance.models.generateContent({
+             model: "gemini-2.5-flash",
+             contents: prompt,
+             config: {
+                 tools: [{ googleSearch: {} }],
+                 responseMimeType: "application/json"
+             }
+         });
+
+         const text = response.text;
+         if(!text) return [];
+         const data = JSON.parse(text);
+         return data.videos || [];
+    } catch (error) {
+        console.error("Error searching YouTube:", error);
+        return [];
+    }
+}
 
 export const generateSpeech = async (text: string, voiceName: string = 'Puck'): Promise<string | undefined> => {
     try {

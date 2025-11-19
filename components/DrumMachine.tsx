@@ -9,6 +9,7 @@ import { FolderOpenIcon } from './icons/FolderOpenIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { SequencerIcon } from './icons/SequencerIcon';
 import { DrumIcon } from './icons/DrumIcon';
+import { saveTrackToDB } from '../services/storageService';
 
 function makeDistortionCurve(amount: number) {
   const k = typeof amount === 'number' ? amount : 50;
@@ -793,15 +794,19 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       const recorder = new MediaRecorder(destRef.current.stream);
       
       recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const url = URL.createObjectURL(blob);
         const newTrack: AudioPlaylistItem = {
           id: Date.now().toString(),
           title: `Drum Session ${new Date().toLocaleTimeString()}`,
           artist: 'DJ Gemini',
-          src: url
+          src: url,
+          createdAt: Date.now(),
         };
+        
+        // Persist to DB then update state
+        await saveTrackToDB(newTrack);
         setGeneratedTracks([...generatedTracks, newTrack]);
       };
 

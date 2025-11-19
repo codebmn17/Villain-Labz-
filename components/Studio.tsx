@@ -1,30 +1,43 @@
+
 import React, { useState, useEffect } from 'react';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
-import { researchAndAdaptSong, findSongLyrics } from '../services/geminiService';
+import { researchAndAdaptSong, findSongLyrics, analyzeSongMetadata } from '../services/geminiService';
+import { saveTrackToDB } from '../services/storageService';
 import { UploadIcon } from './icons/UploadIcon';
 import { ClonedVoice, StudioMode, AudioPlaylistItem } from '../types';
 import AudioPlayer from './AudioPlayer';
+import { AgentIcon } from './icons/AgentIcon'; // Reusing agent icon for "Magic" analysis
 
 interface StudioProps {
   clonedVoices: ClonedVoice[];
   elevenLabsKey: string;
   generatedTracks: AudioPlaylistItem[];
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
+  initialCoverData?: { title: string, artist: string };
 }
 
-const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedTracks, setGeneratedTracks }) => {
+const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedTracks, setGeneratedTracks, initialCoverData }) => {
   const [studioMode, setStudioMode] = useState<StudioMode>(StudioMode.Original);
   const [lyrics, setLyrics] = useState('');
   const [style, setStyle] = useState('Dark Synthwave with heavy bass');
   const [bpm, setBpm] = useState(120);
   const [originalTitle, setOriginalTitle] = useState('');
   const [originalArtist, setOriginalArtist] = useState('');
-  const [shouldAdaptLyrics, setShouldAdaptLyrics] = useState(true);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
 
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false); // For metadata (BPM/Style)
+  const [isFetchingLyrics, setIsFetchingLyrics] = useState(false); // For lyrics
   const [generationStatus, setGenerationStatus] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+      if (initialCoverData) {
+          setStudioMode(StudioMode.Cover);
+          setOriginalTitle(initialCoverData.title);
+          setOriginalArtist(initialCoverData.artist);
+      }
+  }, [initialCoverData]);
 
   useEffect(() => {
     // If the selected voice is deleted, reset the selection
@@ -38,17 +51,64 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
   }, [clonedVoices, selectedVoiceId]);
 
 
+  const handleAnalyzeSong = async () => {
+      if (!originalTitle || !originalArtist) {
+          setError("Please enter a title and artist to analyze.");
+          return;
+      }
+      setIsAnalyzing(true);
+      setError(null);
+      try {
+          const data = await analyzeSongMetadata(originalTitle, originalArtist);
+          setBpm(data.bpm);
+          setStyle(data.style);
+          setGenerationStatus(`Detected: ${data.bpm} BPM, ${data.style}`);
+          setTimeout(() => setGenerationStatus(''), 3000);
+      } catch (e) {
+          setError("Failed to analyze song. Please try entering manually.");
+      } finally {
+          setIsAnalyzing(false);
+      }
+  };
+
+  const handleFetchLyrics = async (adapt: boolean) => {
+      if (!originalTitle || !originalArtist) {
+          setError("Please enter a title and artist first.");
+          return;
+      }
+
+      setIsFetchingLyrics(true);
+      setError(null);
+      setGenerationStatus(adapt ? 'Researching and adapting lyrics...' : 'Fetching original lyrics...');
+
+      try {
+          const fetchedLyrics = adapt
+            ? await researchAndAdaptSong(originalTitle, originalArtist, style)
+            : await findSongLyrics(originalTitle, originalArtist);
+          
+          setLyrics(fetchedLyrics);
+          setGenerationStatus('Lyrics updated. Feel free to edit them below.');
+          setTimeout(() => setGenerationStatus(''), 3000);
+
+      } catch (e) {
+          console.error(e);
+          setError("Failed to fetch lyrics. Please check the song details or try pasting them manually.");
+      } finally {
+          setIsFetchingLyrics(false);
+      }
+  };
+
   const handleGenerateMusic = async () => {
     if (studioMode === StudioMode.Cover) {
         if (!originalTitle || !originalArtist) {
             setError('Please provide the original song title and artist.');
             return;
         }
-    } else { // Original mode
-        if (!lyrics || !style) {
-            setError('Please provide lyrics and a music style.');
-            return;
-        }
+    } 
+    
+    if (!lyrics || !style) {
+        setError('Please provide lyrics and a music style.');
+        return;
     }
 
     if (!selectedVoiceId && !elevenLabsKey) {
@@ -61,41 +121,28 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
     setGenerationStatus('');
 
     try {
-        let lyricsToGenerate = lyrics;
-
-        if (studioMode === StudioMode.Cover) {
-            setGenerationStatus('Researching song via web...');
-            
-            const fetchedLyrics = shouldAdaptLyrics
-                ? await researchAndAdaptSong(originalTitle, originalArtist, style)
-                : await findSongLyrics(originalTitle, originalArtist);
-            
-            setLyrics(fetchedLyrics);
-            lyricsToGenerate = fetchedLyrics;
-
-            setGenerationStatus('Analyzing musical structure...');
-            await new Promise(res => setTimeout(res, 1500));
-        }
-
         setGenerationStatus('Generating vocals & instrumentals...');
         
-        const audioUrl = await elevenLabsGenerate(lyricsToGenerate, elevenLabsKey);
+        // We use the lyrics from the state (which allows user edits after fetching)
+        const audioUrl = await elevenLabsGenerate(lyrics, elevenLabsKey);
         
         const newTrack: AudioPlaylistItem = {
           id: Date.now().toString(),
           src: audioUrl,
-          title: studioMode === StudioMode.Cover ? originalTitle : `Original Track - ${style.substring(0, 20)}`,
-          artist: studioMode === StudioMode.Cover ? originalArtist : 'Villain Labz',
+          title: studioMode === StudioMode.Cover ? `${originalTitle} (Cover)` : `Original - ${style.substring(0, 15)}`,
+          artist: studioMode === StudioMode.Cover ? `${originalArtist} ft. AI` : 'Villain Labz',
+          createdAt: Date.now(),
         };
-        setGeneratedTracks([...generatedTracks, newTrack]);
+
+        // Persist to DB then update state
+        await saveTrackToDB(newTrack);
+        setGeneratedTracks([newTrack, ...generatedTracks]);
 
     } catch (e) {
         console.error("Generation Error:", e);
         if (e instanceof Error) {
             if (e.message.includes('ELEVENLABS_API_KEY_REQUIRED')) {
                 setError('An ElevenLabs API key is required for longer audio generation. Please add one in the Model Manager.');
-            } else if (e.message.includes('research')) {
-                setError('Failed to research the song. The web might be unreachable or the song could not be found.');
             } else {
                  setError('Failed to generate audio. Please check your inputs and try again.');
             }
@@ -146,22 +193,6 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
       </button>
   );
 
-  const getLyricsLabel = () => {
-    if (studioMode === StudioMode.Cover) {
-      return shouldAdaptLyrics ? "Adapted Lyrics (AI will generate this)" : "Original Lyrics (Fetched by AI)";
-    }
-    return "Lyrics";
-  };
-
-  const getLyricsPlaceholder = () => {
-    if (studioMode === StudioMode.Cover) {
-      return shouldAdaptLyrics 
-        ? "AI will research the original song and adapt the lyrics based on your chosen style." 
-        : "AI will research and fetch the original song lyrics here for you to use or edit.";
-    }
-    return "Enter your lyrics here...";
-  };
-
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in relative">
       {isGenerating && (
@@ -185,13 +216,34 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
         </div>
       </div>
       
+      {/* Notification area for analysis success/error */}
+      {(generationStatus && !isGenerating) && (
+          <div className="bg-green-900/50 text-green-300 p-2 rounded-md mb-4 text-sm text-center">
+              {generationStatus}
+          </div>
+      )}
 
       {error && <p className="text-red-400 bg-red-900/50 p-2 rounded-md mb-4">{error}</p>}
 
       <div className="space-y-6">
         {studioMode === StudioMode.Cover && (
           <div className="p-3 bg-gray-700/50 rounded-lg animate-fade-in">
-            <h3 className="text-lg font-semibold text-purple-300 mb-3">Cover Song Details</h3>
+            <div className="flex justify-between items-center mb-3">
+                 <h3 className="text-lg font-semibold text-purple-300">Cover Song Details</h3>
+                 <button 
+                    onClick={handleAnalyzeSong}
+                    disabled={isAnalyzing || !originalTitle || !originalArtist}
+                    className="flex items-center text-xs bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white px-3 py-1 rounded-full transition-colors"
+                    title="Automatically detect BPM and Style"
+                 >
+                     {isAnalyzing ? (
+                         <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                     ) : (
+                         <AgentIcon className="w-4 h-4 mr-1 text-white" />
+                     )}
+                     Auto-Detect Settings
+                 </button>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label htmlFor="originalTitle" className="block text-sm font-medium text-gray-300 mb-2">Original Song Title</label>
@@ -202,26 +254,33 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
                 <input id="originalArtist" type="text" className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500" placeholder="e.g., The Weeknd" value={originalArtist} onChange={(e) => setOriginalArtist(e.target.value)} />
               </div>
             </div>
-             <div className="flex items-center mt-4">
-                <input 
-                    id="adaptLyrics" 
-                    type="checkbox" 
-                    checked={shouldAdaptLyrics} 
-                    onChange={(e) => setShouldAdaptLyrics(e.target.checked)} 
-                    className="h-4 w-4 text-purple-600 bg-gray-900 border-gray-600 rounded focus:ring-purple-500 cursor-pointer" 
-                />
-                <label htmlFor="adaptLyrics" className="ml-3 block text-sm text-gray-300">
-                    Have AI adapt lyrics to the new style
-                </label>
+            
+            {/* Lyric Fetching Controls */}
+            <div className="flex flex-col sm:flex-row gap-3 mt-4">
+                <button 
+                    onClick={() => handleFetchLyrics(false)}
+                    disabled={isFetchingLyrics || !originalTitle || !originalArtist}
+                    className="flex-1 bg-gray-800 hover:bg-gray-600 text-gray-300 border border-gray-600 py-2 px-4 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center"
+                >
+                    {isFetchingLyrics ? 'Fetching...' : 'Get Original Lyrics'}
+                </button>
+                <button 
+                    onClick={() => handleFetchLyrics(true)}
+                    disabled={isFetchingLyrics || !originalTitle || !originalArtist}
+                    className="flex-1 bg-gray-800 hover:bg-purple-900/50 text-purple-300 border border-purple-500/50 py-2 px-4 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center"
+                    title="Rewrites lyrics to match the 'New Music Style'"
+                >
+                    {isFetchingLyrics ? 'Adapting...' : 'Get Adapted Lyrics'}
+                </button>
             </div>
-            <p className="text-xs text-gray-500 mt-3">Connecting to Spotify can enhance song data research.</p>
+            <p className="text-xs text-gray-500 mt-3">Tip: Fetch lyrics to populate the editor below, then you can add your own verses or edits before generating.</p>
           </div>
         )}
         
         <div>
            <div className="flex justify-between items-center mb-2">
             <label htmlFor="lyrics" className="block text-sm font-medium text-gray-300">
-              {getLyricsLabel()}
+              Lyrics
             </label>
             <label htmlFor="lyrics-file-upload" className="flex items-center text-sm text-purple-400 hover:text-purple-300 cursor-pointer font-medium transition-colors">
               <UploadIcon className="h-5 w-5 mr-2 text-purple-400" />
@@ -232,7 +291,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
                 accept=".txt,.md"
                 className="hidden"
                 onChange={handleLyricsFileUpload}
-                disabled={studioMode === StudioMode.Cover && isGenerating}
+                disabled={isGenerating}
               />
             </label>
           </div>
@@ -240,10 +299,10 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
             id="lyrics"
             rows={8}
             className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition"
-            placeholder={getLyricsPlaceholder()}
+            placeholder={studioMode === StudioMode.Cover ? "Fetch lyrics above or type your own..." : "Enter your lyrics here..."}
             value={lyrics}
             onChange={(e) => setLyrics(e.target.value)}
-            readOnly={studioMode === StudioMode.Cover && isGenerating}
+            readOnly={isGenerating}
           />
           <p className="text-xs text-gray-500 mt-2">You can paste lyrics directly or upload a text file (up to 3GB).</p>
         </div>
@@ -303,7 +362,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
             disabled={isGenerating}
             className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-lg transition-all duration-300 shadow-lg"
           >
-            {isGenerating ? 'Generating...' : (studioMode === StudioMode.Cover ? 'Generate Cover' : 'Generate Music')}
+            {isGenerating ? 'Generating...' : 'Generate Music'}
           </button>
         </div>
       </div>
