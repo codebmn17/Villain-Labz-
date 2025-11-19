@@ -1,10 +1,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos } from '../services/geminiService';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
+import AudioPlayer from './AudioPlayer';
 
 interface ChatProps {
   appController: AppController;
@@ -14,13 +15,11 @@ const UI_HISTORY_KEY = 'villain_labz_ui_history';
 const AI_HISTORY_KEY = 'villain_labz_ai_history';
 const MAX_BASE64_SIZE = 20 * 1024 * 1024; // 20MB limit for inline base64
 
-// Helper to decode Gemini's PCM audio (24kHz, mono, f32le implied usually but standard example assumes headerless handling or base64 decode)
-// Updated to standard Base64 decode + AudioContext play
+// Helper to decode Gemini's PCM audio
 async function playEncodedAudio(base64String: string) {
     try {
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         
-        // Convert Base64 to Uint8Array
         const binaryString = atob(base64String);
         const len = binaryString.length;
         const bytes = new Uint8Array(len);
@@ -28,11 +27,6 @@ async function playEncodedAudio(base64String: string) {
             bytes[i] = binaryString.charCodeAt(i);
         }
 
-        // The data is raw PCM, not a WAV file. We need to put it into an AudioBuffer manually.
-        // Gemini TTS returns raw PCM 16-bit or 32-float? 
-        // Usually 24kHz. Let's try treating it as raw PCM data.
-        // Typically standard is 16-bit Little Endian for these streams if not specified otherwise.
-        
         const dataInt16 = new Int16Array(bytes.buffer);
         const buffer = audioContext.createBuffer(1, dataInt16.length, 24000);
         const channelData = buffer.getChannelData(0);
@@ -131,15 +125,14 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   useEffect(scrollToBottom, [messages]);
 
-  const addUIMessage = (sender: 'user' | 'ai', text: string, msgAttachments: ChatAttachment[] = []) => {
-    setMessages(prev => [...prev, { sender, text, attachments: msgAttachments }]);
+  const addUIMessage = (sender: 'user' | 'ai', text: string, msgAttachments: ChatAttachment[] = [], audioTrack?: AudioPlaylistItem) => {
+    setMessages(prev => [...prev, { sender, text, attachments: msgAttachments, audioTrack }]);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
       
-      // Prepare initial placeholders in UI
       const newAttachments: ChatAttachment[] = files.map(file => ({
           name: file.name,
           mimeType: file.type,
@@ -148,9 +141,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       setAttachments(prev => [...prev, ...newAttachments]);
 
       try {
-        // Process files
         const processedAttachments = await Promise.all(files.map(async (file: File) => {
-            // Large File Strategy: Upload to Gemini File API
             if (file.size > MAX_BASE64_SIZE) {
                 try {
                     const uri = await uploadFileToGemini(file);
@@ -165,12 +156,11 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                     return {
                         name: file.name,
                         mimeType: file.type,
-                        isUploading: false, // Failed
+                        isUploading: false, 
                         error: "Upload failed"
                     };
                 }
             } else {
-                // Small File Strategy: Inline Base64
                 return new Promise<ChatAttachment>((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onloadend = () => {
@@ -193,9 +183,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             }
         }));
 
-        // Update state with processed attachments (replacing the loading placeholders)
         setAttachments(prev => {
-            // Remove the placeholders we added (based on name match for simplicity, simplistic but effective for this scope)
             const filtered = prev.filter(p => !files.find(f => f.name === p.name && p.isUploading));
             return [...filtered, ...processedAttachments];
         });
@@ -203,10 +191,9 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       } catch (err) {
           console.error("Error processing files", err);
           addUIMessage('ai', 'Error processing attached files.');
-          setAttachments([]); // Clear on major error
+          setAttachments([]); 
       }
     }
-    // Reset input so the same file can be selected again if needed
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -215,7 +202,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   };
 
   const handleSend = async () => {
-    // Prevent send if still uploading
     if (attachments.some(a => a.isUploading)) return;
     if ((input.trim() === '' && attachments.length === 0) || isLoading) return;
 
@@ -229,8 +215,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
     try {
       let responseData;
+      let generatedAudioTrack: AudioPlaylistItem | undefined;
       
-      // Construct message payload (String or Parts)
       if (currentAttachments.length > 0) {
           const parts: Part[] = [];
           if (currentInput.trim()) {
@@ -238,7 +224,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
           }
           currentAttachments.forEach(att => {
               if (att.fileUri) {
-                  // Use fileUri for large files
                   parts.push({
                       fileData: {
                           mimeType: att.mimeType,
@@ -246,7 +231,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                       }
                   });
               } else if (att.data) {
-                  // Use inlineData for small files
                   parts.push({
                       inlineData: {
                           mimeType: att.mimeType,
@@ -279,6 +263,16 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               result = { success: true, view: args.view };
               executionResultText = `Navigated to ${args.view}.`;
               break;
+            case 'searchYouTube':
+                try {
+                    const videos = await searchYouTubeVideos(args.query as string);
+                    result = { success: true, videos: videos.map(v => ({ title: v.title, channel: v.channel, url: v.url })) };
+                    executionResultText = `Found ${videos.length} videos for "${args.query}".`;
+                } catch(e) {
+                    result = { success: false, error: "YouTube search failed" };
+                    executionResultText = "Failed to search YouTube.";
+                }
+                break;
             case 'generateOriginalMusic':
             case 'generateCoverSong':
               try {
@@ -308,6 +302,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                   id: Date.now().toString(), src: audioUrl, title, artist,
                 };
                 appController.setGeneratedTracks([...appController.generatedTracks, newTrack]);
+                generatedAudioTrack = newTrack; // Capture the track
+
                 result = { success: true, trackId: newTrack.id, title: newTrack.title };
                 executionResultText = `Successfully generated track: "${newTrack.title}".`;
               } catch (e) {
@@ -345,7 +341,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             case 'setOpenAIApiKey':
             case 'setClaudeApiKey':
             case 'setNinjaApiKey':
-              // Simplified setter logic
                if(name === 'setElevenLabsApiKey') appController.setElevenLabsKey(args.apiKey as string);
                if(name === 'setOpenAIApiKey') appController.setOpenAIKey(args.apiKey as string);
                if(name === 'setClaudeApiKey') appController.setClaudeKey(args.apiKey as string);
@@ -361,10 +356,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               break;
             case 'executeJavaScript':
                try {
-                  // Providing context to the executed code
                   const code = String(args.code);
-                  // We wrap in a promise to handle async code if necessary, though new Function is sync.
-                  // We pass 'appController' so the AI can access the app state.
                   const func = new Function('appController', 'window', 'document', `
                       try {
                           ${code}
@@ -408,7 +400,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                     if (audioData) {
                         playEncodedAudio(audioData);
                         result = { success: true };
-                        // executionResultText = `(Speaking: "${text}")`;
                     } else {
                         result = { success: false, error: "No audio generated" };
                     }
@@ -431,7 +422,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       }
 
       if (response.text) {
-        addUIMessage('ai', response.text);
+        addUIMessage('ai', response.text, [], generatedAudioTrack);
       }
 
     } catch (error) {
@@ -455,7 +446,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       
       <div className="flex-1 overflow-y-auto pr-4 space-y-4">
         {messages.map((msg, index) => (
-          <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={index} className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-lg px-3 py-2 rounded-xl ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
               <p style={{whiteSpace: 'pre-wrap'}}>{msg.text}</p>
               {msg.attachments && msg.attachments.length > 0 && (
@@ -470,6 +461,14 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                   </div>
               )}
             </div>
+            {msg.audioTrack && (
+                <div className="mt-2 w-full max-w-lg">
+                    <div className="bg-gray-900/80 p-2 rounded-lg border border-purple-500/30">
+                         <p className="text-xs text-purple-300 mb-1 font-bold px-1">Generated Track</p>
+                         <AudioPlayer playlist={[msg.audioTrack]} />
+                    </div>
+                </div>
+            )}
           </div>
         ))}
         {isLoading && (

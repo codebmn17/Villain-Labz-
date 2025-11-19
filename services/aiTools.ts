@@ -49,6 +49,18 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['originalTitle', 'originalArtist', 'style', 'voiceId']
         }
     },
+    // YouTube
+    {
+        name: 'searchYouTube',
+        description: 'Searches YouTube for videos. Use this to find songs, artists, or reference material.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                query: { type: Type.STRING, description: 'The search query.' }
+            },
+            required: ['query']
+        }
+    },
     // State Querying
     {
         name: 'listClonedVoices',

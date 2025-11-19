@@ -33,12 +33,7 @@ export interface ChatAttachment {
   data?: string; // Base64 for small files
   fileUri?: string; // URI for large files uploaded to Gemini
   isUploading?: boolean; // UI state
-}
-
-export interface ChatMessage {
-  sender: 'user' | 'ai';
-  text: string;
-  attachments?: ChatAttachment[];
+  error?: string;
 }
 
 export interface AudioPlaylistItem {
@@ -49,6 +44,13 @@ export interface AudioPlaylistItem {
   createdAt?: number; // Timestamp
   size?: number; // Bytes
   type?: string; // 'wav' | 'mp3' etc
+}
+
+export interface ChatMessage {
+  sender: 'user' | 'ai';
+  text: string;
+  attachments?: ChatAttachment[];
+  audioTrack?: AudioPlaylistItem; // Track generated in this message
 }
 
 export type SoundType = 'kick' | 'snare' | 'hihat' | 'bass' | 'fx' | 'synth';
