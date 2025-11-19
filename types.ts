@@ -18,8 +18,11 @@ export enum StudioMode {
 export interface ClonedVoice {
   id: string;
   name: string;
-  file: File;
+  file?: File; // Optional now, as fetched voices won't have the source file locally
+  previewUrl?: string;
+  description?: string;
   cloneDate: string;
+  category?: string; // 'cloned' | 'premade'
 }
 
 export interface ChatAttachment {

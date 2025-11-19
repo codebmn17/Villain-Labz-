@@ -97,7 +97,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case AppView.VoiceLab:
-        return <VoiceLab setClonedVoices={setClonedVoices} clonedVoices={clonedVoices} />;
+        return <VoiceLab setClonedVoices={setClonedVoices} clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} />;
       case AppView.Studio:
         return <Studio clonedVoices={clonedVoices} elevenLabsKey={elevenLabsKey} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
       case AppView.DrumMachine:
