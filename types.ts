@@ -30,7 +30,9 @@ export interface ClonedVoice {
 export interface ChatAttachment {
   name: string;
   mimeType: string;
-  data: string; // Base64
+  data?: string; // Base64 for small files
+  fileUri?: string; // URI for large files uploaded to Gemini
+  isUploading?: boolean; // UI state
 }
 
 export interface ChatMessage {

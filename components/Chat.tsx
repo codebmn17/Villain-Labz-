@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini } from '../services/geminiService';
 import { elevenLabsGenerate } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -12,6 +12,7 @@ interface ChatProps {
 
 const UI_HISTORY_KEY = 'villain_labz_ui_history';
 const AI_HISTORY_KEY = 'villain_labz_ai_history';
+const MAX_BASE64_SIZE = 20 * 1024 * 1024; // 20MB limit for inline base64
 
 // Helper to decode Gemini's PCM audio (24kHz, mono, f32le implied usually but standard example assumes headerless handling or base64 decode)
 // Updated to standard Base64 decode + AudioContext play
@@ -137,31 +138,72 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       const files = Array.from(e.target.files);
+      
+      // Prepare initial placeholders in UI
+      const newAttachments: ChatAttachment[] = files.map(file => ({
+          name: file.name,
+          mimeType: file.type,
+          isUploading: true
+      }));
+      setAttachments(prev => [...prev, ...newAttachments]);
+
       try {
-        const newAttachments = await Promise.all(files.map(async (file: File) => {
-            return new Promise<ChatAttachment>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const res = reader.result as string;
-                if (!res) {
-                    reject(new Error("Failed to read file"));
-                    return;
+        // Process files
+        const processedAttachments = await Promise.all(files.map(async (file: File) => {
+            // Large File Strategy: Upload to Gemini File API
+            if (file.size > MAX_BASE64_SIZE) {
+                try {
+                    const uri = await uploadFileToGemini(file);
+                    return {
+                        name: file.name,
+                        mimeType: file.type,
+                        fileUri: uri,
+                        isUploading: false
+                    };
+                } catch (err) {
+                    console.error("Failed to upload large file", err);
+                    return {
+                        name: file.name,
+                        mimeType: file.type,
+                        isUploading: false, // Failed
+                        error: "Upload failed"
+                    };
                 }
-                const base64String = res.split(',')[1];
-                resolve({
-                name: file.name,
-                mimeType: file.type,
-                data: base64String
+            } else {
+                // Small File Strategy: Inline Base64
+                return new Promise<ChatAttachment>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const res = reader.result as string;
+                        if (!res) {
+                            reject(new Error("Failed to read file"));
+                            return;
+                        }
+                        const base64String = res.split(',')[1];
+                        resolve({
+                            name: file.name,
+                            mimeType: file.type,
+                            data: base64String,
+                            isUploading: false
+                        });
+                    };
+                    reader.onerror = reject;
+                    reader.readAsDataURL(file);
                 });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-            });
+            }
         }));
-        setAttachments(prev => [...prev, ...newAttachments]);
+
+        // Update state with processed attachments (replacing the loading placeholders)
+        setAttachments(prev => {
+            // Remove the placeholders we added (based on name match for simplicity, simplistic but effective for this scope)
+            const filtered = prev.filter(p => !files.find(f => f.name === p.name && p.isUploading));
+            return [...filtered, ...processedAttachments];
+        });
+
       } catch (err) {
-          console.error("Error reading files", err);
-          addUIMessage('ai', 'Error reading attached files.');
+          console.error("Error processing files", err);
+          addUIMessage('ai', 'Error processing attached files.');
+          setAttachments([]); // Clear on major error
       }
     }
     // Reset input so the same file can be selected again if needed
@@ -173,6 +215,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   };
 
   const handleSend = async () => {
+    // Prevent send if still uploading
+    if (attachments.some(a => a.isUploading)) return;
     if ((input.trim() === '' && attachments.length === 0) || isLoading) return;
 
     const currentInput = input;
@@ -193,12 +237,23 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               parts.push({ text: currentInput });
           }
           currentAttachments.forEach(att => {
-              parts.push({
-                  inlineData: {
-                      mimeType: att.mimeType,
-                      data: att.data
-                  }
-              });
+              if (att.fileUri) {
+                  // Use fileUri for large files
+                  parts.push({
+                      fileData: {
+                          mimeType: att.mimeType,
+                          fileUri: att.fileUri
+                      }
+                  });
+              } else if (att.data) {
+                  // Use inlineData for small files
+                  parts.push({
+                      inlineData: {
+                          mimeType: att.mimeType,
+                          data: att.data
+                      }
+                  });
+              }
           });
           responseData = await sendMessageToAI(parts, aiHistory, appController.activeModel);
       } else {
@@ -210,8 +265,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
       while (response.functionCalls && response.functionCalls.length > 0) {
         const functionCalls = response.functionCalls;
-        // Only show "Executing tools" if it's a long running task or significant
-        // addUIMessage('ai', `DJ Gemini is thinking... (${functionCalls.map(fc => fc.name).join(', ')})`);
         
         const toolResponses: FunctionResponse[] = [];
 
@@ -368,8 +421,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               executionResultText = `Error: The tool "${name}" is not recognized.`;
           }
 
-          // Optional: Log tool usage for the user to see 'thought process'
-          // addUIMessage('ai', `Tool ${name}: ${executionResultText}`);
           toolResponses.push({ name, response: { result } });
         }
 
@@ -413,6 +464,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                           <div key={i} className="flex items-center bg-black/20 p-1 rounded text-xs">
                                <span className="truncate max-w-[200px]">{att.name}</span>
                                <span className="ml-2 opacity-70 text-[10px] uppercase">({att.mimeType.split('/')[1] || 'FILE'})</span>
+                               {att.fileUri && <span className="ml-1 text-[10px] text-green-400">[CLOUD]</span>}
                           </div>
                       ))}
                   </div>
@@ -440,7 +492,11 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             <div className="flex flex-wrap gap-2 mb-2 p-2 bg-gray-900/50 rounded-lg">
                 {attachments.map((att, index) => (
                     <div key={index} className="flex items-center bg-gray-700 text-white text-xs px-2 py-1 rounded-full">
+                        {att.isUploading ? (
+                           <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                        ) : null}
                         <span className="truncate max-w-[150px]">{att.name}</span>
+                        {att.fileUri && <span className="ml-1 text-[9px] bg-green-900 text-green-300 px-1 rounded">CLOUD</span>}
                         <button 
                             onClick={() => removeAttachment(index)}
                             className="ml-2 text-gray-400 hover:text-red-400 font-bold focus:outline-none"
@@ -463,7 +519,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             <button
                 onClick={() => fileInputRef.current?.click()}
                 className="bg-gray-700 hover:bg-gray-600 text-gray-300 p-2 rounded-l-lg border border-r-0 border-gray-600 h-[42px] transition-colors"
-                title="Attach file"
+                title="Attach file (Large files supported)"
+                disabled={isLoading}
             >
                 <PaperClipIcon />
             </button>
@@ -478,10 +535,14 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             />
             <button
             onClick={handleSend}
-            disabled={isLoading}
-            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-r-lg transition-all duration-300 h-[42px]"
+            disabled={isLoading || attachments.some(a => a.isUploading)}
+            className="bg-purple-600 hover:bg-purple-700 disabled:bg-purple-900 disabled:cursor-not-allowed text-white font-bold py-2 px-4 rounded-r-lg transition-all duration-300 h-[42px] flex items-center"
             >
-            Send
+              {attachments.some(a => a.isUploading) ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                'Send'
+              )}
             </button>
         </div>
       </div>

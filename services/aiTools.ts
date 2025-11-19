@@ -130,13 +130,13 @@ export const aiTools: FunctionDeclaration[] = [
     // Code Execution & Self Improvement
     {
         name: 'executeJavaScript',
-        description: "Executes raw JavaScript code in the browser context. Use this to: 1. Generate audio using Web Audio API. 2. Manipulate the DOM/UI. 3. Perform complex calculations. 4. 'Upgrade' the app by injecting new behavior. access 'appController' to modify state. If the code fails, you will receive the error message; use it to debug and correct your code.",
+        description: "The Ultimate Tool. Executes raw JavaScript code in the browser context with full access to the application state (`appController`), the DOM (`document`), and the global window (`window`). Use this to: 1. **Self-Evolution**: Upgrade the app's UI, add new features, or change styles dynamically. 2. **Audio Synthesis**: Use the Web Audio API to generate sound buffers or visualizers. 3. **Data Manipulation**: Modify state, fix bugs, or handle persistence. 4. **Self-Correction**: If your code fails, you get the error message; analyze it and execute a fixed version immediately. NOTE: You are in a browser (React/Vite).",
         parameters: {
             type: Type.OBJECT,
             properties: {
                 code: {
                     type: Type.STRING,
-                    description: "The JavaScript code to execute. It has access to 'appController', 'window', and 'document'. Return a string result if needed.",
+                    description: "The JavaScript code to execute. It has access to 'appController', 'window', and 'document'.",
                 },
             },
             required: ['code'],

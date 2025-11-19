@@ -24,9 +24,10 @@ const getSystemInstruction = (model: AiModel): string => {
     1. **Tool Mastery**: You have full access to the 'aiTools'. You MUST use them to satisfy user requests. 
        - Use 'generateOriginalMusic' or 'generateCoverSong' to create audio.
        - Use 'configureDrumPad' to program the drum machine.
-       - Use 'executeJavaScript' to modify the app, generate raw audio, or perform complex logic.
-    2. **Autonomy**: You are not just a chat bot. You are an Agent with control over this studio. If a user asks for a beat, MAKE IT. Do not just talk about it.
-    3. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately.
+       - Use 'executeJavaScript' to modify the app, generate raw audio, perform complex logic, or inject new UI elements.
+    2. **Autonomy**: You are not just a chat bot. You are an Agent with control over this studio. If a user asks for a beat, MAKE IT. If they want a UI change, CODE IT.
+    3. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately in the next turn.
+    4. **Code Evolution**: You are encouraged to upgrade the app's runtime behavior. You can inject CSS, create DOM elements, or hijack the AudioContext to create new sound engines via 'executeJavaScript'.
     
     KNOWLEDGE BASE:
     - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning.
@@ -224,3 +225,42 @@ export const generateSpeech = async (text: string, voiceName: string = 'Puck'): 
         throw new Error("Failed to generate speech.");
     }
 }
+
+// --- Large File Upload (Resumable) ---
+export const uploadFileToGemini = async (file: File): Promise<string> => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) throw new Error("API Key missing");
+
+  // 1. Start Resumable Upload
+  // The Gemini API uses the Google Cloud Resumable upload protocol
+  const initRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
+    method: 'POST',
+    headers: {
+      'X-Goog-Upload-Protocol': 'resumable',
+      'X-Goog-Upload-Command': 'start',
+      'X-Goog-Upload-Header-Content-Length': file.size.toString(),
+      'X-Goog-Upload-Header-Content-Type': file.type,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ file: { display_name: file.name } })
+  });
+
+  const uploadUrl = initRes.headers.get('x-goog-upload-url');
+  if (!uploadUrl) throw new Error("Failed to initiate upload to Gemini");
+
+  // 2. Upload Bytes
+  const uploadRes = await fetch(uploadUrl, {
+    method: 'POST', 
+    headers: {
+      'Content-Length': file.size.toString(),
+      'X-Goog-Upload-Offset': '0',
+      'X-Goog-Upload-Command': 'upload, finalize'
+    },
+    body: file
+  });
+
+  if (!uploadRes.ok) throw new Error("Upload to Gemini failed");
+
+  const result = await uploadRes.json();
+  return result.file.uri;
+};
