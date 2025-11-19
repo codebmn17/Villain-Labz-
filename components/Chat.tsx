@@ -200,9 +200,9 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                   }
               });
           });
-          responseData = await sendMessageToAI(parts, aiHistory);
+          responseData = await sendMessageToAI(parts, aiHistory, appController.activeModel);
       } else {
-          responseData = await sendMessageToAI(currentInput, aiHistory);
+          responseData = await sendMessageToAI(currentInput, aiHistory, appController.activeModel);
       }
 
       let { response, newHistory } = responseData;
@@ -373,7 +373,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
           toolResponses.push({ name, response: { result } });
         }
 
-        const finalResult = await sendMessageToAI(toolResponses, newHistory);
+        const finalResult = await sendMessageToAI(toolResponses, newHistory, appController.activeModel);
         response = finalResult.response;
         newHistory = finalResult.newHistory;
         setAiHistory(newHistory);

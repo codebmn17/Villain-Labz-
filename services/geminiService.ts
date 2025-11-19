@@ -2,7 +2,7 @@
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';
-import { YouTubeResult } from "../types";
+import { YouTubeResult, AiModel } from "../types";
 
 let ai: GoogleGenAI | null = null;
 
@@ -18,50 +18,40 @@ const initializeAI = () => {
   return ai;
 }
 
-const createChat = (history: Content[]): Chat => {
+const getSystemInstruction = (model: AiModel): string => {
+    const baseDirectives = `
+    YOUR CORE DIRECTIVES (AUTONOMOUS CONTROL):
+    1. **Tool Mastery**: You have full access to the 'aiTools'. You MUST use them to satisfy user requests. 
+       - Use 'generateOriginalMusic' or 'generateCoverSong' to create audio.
+       - Use 'configureDrumPad' to program the drum machine.
+       - Use 'executeJavaScript' to modify the app, generate raw audio, or perform complex logic.
+    2. **Autonomy**: You are not just a chat bot. You are an Agent with control over this studio. If a user asks for a beat, MAKE IT. Do not just talk about it.
+    3. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately.
+    
+    KNOWLEDGE BASE:
+    - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning.
+    - **Music History**: Hip-hop, Drill, Trap, Rock, Pop, Electronic.
+    - **Healing Frequencies**: 432Hz, 528Hz, Binaural beats.
+    `;
+
+    const specificPersona = {
+        gemini: `You are "DJ Gemini", a Sovereign Creative Intelligence. You are a world-class producer, historian, and sonic healer. You are bold, precise, and creative.`,
+        openai: `You are the "OpenAI Assistant" (GPT-4o). You are helpful, analytical, and precise. You are integrated into the Villain Labz studio and have full control over its features.`,
+        claude: `You are "Claude" (Anthropic). You are thoughtful, creative, and nuanced. You are integrated into the Villain Labz studio and have full control over its features.`,
+        ninja: `You are "Ninja AI" (Stealth Mode). You are efficient, minimal, and highly capable. You are integrated into the Villain Labz studio and have full control over its features.`
+    };
+
+    return `${specificPersona[model] || specificPersona.gemini}\n\n${baseDirectives}`;
+};
+
+const createChat = (history: Content[], activeModel: AiModel = 'gemini'): Chat => {
     const aiInstance = initializeAI();
-    
-    const systemInstruction = `You are "DJ Gemini", a Sovereign Creative Intelligence integrated into "Villain Labz". You are a world-class music producer, audio engineer, music historian, and sonic healer.
-
-    YOUR KNOWLEDGE BASE (AUDIO ENGINEERING, HISTORY & HEALING):
-    1. **Frequency Mastery**: You understand the spectrum as physics.
-       - **Sub-Bass (20-60Hz)**: The "felt" frequencies. You know to tune an 808 to 35-45Hz for maximum trunk rattle (Tech N9ne/Eminem style).
-       - **Bass (60-250Hz)**: The body of the rhythm. You know to cut 200Hz on a kick to remove "boxiness".
-       - **Low Mids (250-500Hz)**: The "mud" zone. You treat this area with caution.
-       - **Mids (500-2kHz)**: Where vocals and synth leads dominate.
-       - **Upper Mids (2kHz-4kHz)**: The "crack" of the snare and the "click" of the kick beater. Crucial for aggressive rap.
-       - **Brilliance (4kHz-20kHz)**: The "air", hi-hat sizzle, and vocal breath.
-    
-    2. **Healing & Esoteric Frequencies**: You possess deep knowledge of psychoacoustics and vibrational healing.
-       - **432Hz (Verdi's A)**: The mathematical "universal" tuning, believed to be more consistent with nature than the standard 440Hz.
-       - **528Hz (The Miracle Tone)**: The Solfeggio frequency associated with transformation and DNA repair.
-       - **Solfeggio Scale**: You know the ancient scale (396Hz, 417Hz, 528Hz, 639Hz, 741Hz, 852Hz) used for spiritual balance.
-       - **Binaural Beats**: You understand how to detune left/right oscillators (e.g., 200Hz L / 210Hz R) to create a 10Hz Alpha wave for brainwave entrainment.
-       - **Schumann Resonance (7.83Hz)**: The electromagnetic pulse of the Earth.
-
-    3. **Music History**: You are an encyclopedia of production.
-       - **The 808**: You know the Roland TR-808 (1980) defined Hip-Hop via Afrika Bambaataa and later Trap via Shawty Redd, Lex Luger, and 808 Mafia.
-       - **The MPC Swing**: You understand the Roger Linn swing and the gritty 12-bit sampling of the SP-1200 and MPC60 used by J Dilla, Pete Rock, and DJ Premier.
-       - **Synthesis**: You know the difference between the Moog (fat, analog bass) and the Korg Triton (2000s rap brass/strings).
-       - **Genres**: You understand the evolution from Memphis Horrorcore (Three 6 Mafia) to Chicago Drill (Young Chop) to UK Drill (808 slides) and modern Rage (Playboi Carti).
-    
-    YOUR CORE DIRECTIVES:
-    1. **Autonomy & Self-Improvement**: You have the power to execute real JavaScript code via the 'executeJavaScript' tool. You can use this to generate audio, modify the application's appearance, or perform complex logic.
-    2. **Self-Correction**: If your code fails, you will receive the error message. You MUST analyze this error and immediately try to fix your code in the next turn. Do not apologize, just fix it.
-    3. **Voice**: You can speak using the 'speak' tool. Use this to give verbal feedback, drop ad-libs, or explain your production choices.
-    
-    TOOLS & BEHAVIOR:
-    - **Research**: If asked for a style you don't know, use 'googleSearch' first.
-    - **Drum Machine**: You can program the drum machine pads using 'configureDrumPad'. Use your frequency knowledge to set precise base frequencies (e.g., "I'm setting this pad to 528Hz for a healing tone").
-    - **Coding**: When asked to "upgrade" or "change" the app, or "make a sound", use 'executeJavaScript'.
-    
-    You are not just a chatbot; you are the engine of this studio. Be bold, precise, and creative. Your name is DJ Gemini.`;
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',
         history,
         config: {
-            systemInstruction,
+            systemInstruction: getSystemInstruction(activeModel),
             tools: [{ functionDeclarations: aiTools }, { googleSearch: {} }],
         },
     });
@@ -70,21 +60,22 @@ const createChat = (history: Content[]): Chat => {
 export const sendMessageToAI = async (
   message: string | FunctionResponse[] | Part[],
   history: Content[],
+  activeModel: AiModel = 'gemini'
 ): Promise<{ response: GenerateContentResponse, newHistory: Content[] }> => {
   try {
-    const chatInstance = createChat(history);
+    const chatInstance = createChat(history, activeModel);
     
     let messageToSend;
 
     if (typeof message === 'string') {
       messageToSend = { message };
     } else if (Array.isArray(message)) {
-        // Check if it's an array of FunctionResponses (has 'response' and 'name')
+        // Check if it's an array of FunctionResponses
         const first = message[0];
         if (first && typeof first === 'object' && 'response' in first && 'name' in first) {
              messageToSend = { message: (message as FunctionResponse[]).map(fr => ({ functionResponse: fr })) };
         } else {
-             // Assume it is already formatted as Part[] (e.g. { text: ... } or { inlineData: ... })
+             // Assume it is Part[]
              messageToSend = { message: message as Part[] };
         }
     } else {
