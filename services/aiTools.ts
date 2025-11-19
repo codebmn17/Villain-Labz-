@@ -49,6 +49,19 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['originalTitle', 'originalArtist', 'style', 'voiceId']
         }
     },
+    // Voice Cloning
+    {
+        name: 'cloneVoice',
+        description: 'Clones a voice from an audio file attached to the chat. Requires an audio file attachment.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                name: { type: Type.STRING, description: 'Name for the new voice.' },
+                description: { type: Type.STRING, description: 'Description of the voice.' }
+            },
+            required: ['name']
+        }
+    },
     // YouTube
     {
         name: 'searchYouTube',

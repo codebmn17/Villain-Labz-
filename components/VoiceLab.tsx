@@ -105,6 +105,11 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      if (file.size > 100 * 1024 * 1024) {
+          setError('File is too large. Maximum size is 100MB.');
+          return;
+      }
+
       if (file.type.startsWith('audio/')) {
         setError(null);
         setSelectedFile(file);
@@ -214,34 +219,34 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
   };
 
   return (
-    <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in">
-      <div className="flex justify-between items-start mb-6">
+    <div className="bg-gray-800 p-2 rounded-xl shadow-2xl animate-fade-in">
+      <div className="flex justify-between items-start mb-2">
          <div>
-             <h2 className="text-3xl font-bold text-purple-400 mb-2">Voice Lab</h2>
-             <p className="text-gray-400">Instant Voice Cloning. Upload a clean sample or record directly to create a digital replica.</p>
+             <h2 className="text-2xl font-bold text-purple-400 mb-0.5">Voice Lab</h2>
+             <p className="text-gray-400 text-[10px]">Instant Voice Cloning. Upload a clean sample or record directly.</p>
          </div>
          {!elevenLabsKey && (
-             <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-500 px-3 py-2 rounded-lg text-xs max-w-xs">
-                 Note: Add an ElevenLabs API Key in Model Manager for high-quality cloning. Currently running in simulation mode.
+             <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-500 px-1.5 py-0.5 rounded-lg text-[7px] leading-tight max-w-[150px]">
+                 Note: Add ElevenLabs API Key in Model Manager. Running in simulation.
              </div>
          )}
       </div>
       
-      {error && <p className="text-red-400 bg-red-900/50 p-2 rounded-md mb-4">{error}</p>}
+      {error && <p className="text-red-400 bg-red-900/50 p-1 rounded-md mb-2 text-[10px]">{error}</p>}
       {successMessage && (
-        <div className="bg-green-900/50 text-green-300 p-3 rounded-lg mb-6 text-center">
+        <div className="bg-green-900/50 text-green-300 p-1 rounded-lg mb-2 text-center text-[10px]">
             <p className="font-semibold">{successMessage}</p>
         </div>
       )}
 
       {/* Creation Flow */}
-      <div className="bg-gray-700/30 border border-gray-700 rounded-xl p-6 mb-8">
+      <div className="bg-gray-700/30 border border-gray-700 rounded-lg p-2 mb-2">
           {creationStep === 'select' ? (
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center flex flex-col items-center justify-center hover:border-purple-500 transition-colors relative bg-gray-800/50">
-                    <UploadIcon />
-                    <p className="mt-4 text-gray-300 font-medium">Upload Audio Sample</p>
-                    <p className="text-xs text-gray-500 mt-1">WAV, MP3 (Max 10MB)</p>
+              <div className="grid md:grid-cols-2 gap-2">
+                <div className="border border-dashed border-gray-600 rounded-lg p-2 text-center flex flex-col items-center justify-center hover:border-purple-500 transition-colors relative bg-gray-800/50 h-24">
+                    <UploadIcon className="h-6 w-6 text-gray-500" />
+                    <p className="mt-0.5 text-gray-300 font-medium text-[10px]">Upload Audio Sample</p>
+                    <p className="text-[8px] text-gray-500 mt-0.5">WAV, MP3 (Max 100MB)</p>
                     <input 
                         type="file" 
                         accept="audio/*"
@@ -251,79 +256,79 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
                     />
                 </div>
 
-                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-6 text-center flex flex-col items-center justify-center relative overflow-hidden">
+                <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-2 text-center flex flex-col items-center justify-center relative overflow-hidden h-24">
                     {isRecording && (
                         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full opacity-30 pointer-events-none" width="400" height="200"></canvas>
                     )}
-                    <p className="text-lg font-semibold text-gray-200 mb-4 z-10">Record Sample</p>
+                    <p className="text-xs font-semibold text-gray-200 mb-1 z-10">Record Sample</p>
                     <button 
                         onClick={isRecording ? stopRecording : startRecording}
                         disabled={isUploading}
-                        className={`z-10 px-6 py-3 font-bold rounded-full transition-all duration-300 text-white flex items-center shadow-lg ${
+                        className={`z-10 px-2 py-1 font-bold rounded-full transition-all duration-300 text-white flex items-center shadow-lg text-[10px] ${
                         isRecording 
-                        ? 'bg-red-600 hover:bg-red-700 animate-pulse ring-4 ring-red-900/50' 
+                        ? 'bg-red-600 hover:bg-red-700 animate-pulse ring-2 ring-red-900/50' 
                         : 'bg-purple-600 hover:bg-purple-700'
                         }`}
                     >
-                        <div className={`mr-2 h-3 w-3 rounded-full ${isRecording ? 'bg-white' : 'bg-red-300'}`}></div>
-                        {isRecording ? 'Stop Recording' : 'Start Recording'}
+                        <div className={`mr-1 h-1.5 w-1.5 rounded-full ${isRecording ? 'bg-white' : 'bg-red-300'}`}></div>
+                        {isRecording ? 'Stop' : 'Record'}
                     </button>
                 </div>
               </div>
           ) : (
               <div className="animate-fade-in">
-                  <h3 className="text-xl font-semibold text-white mb-4">Voice Details</h3>
-                  <div className="grid md:grid-cols-2 gap-6">
-                      <div className="space-y-4">
+                  <h3 className="text-xs font-semibold text-white mb-1">Voice Details</h3>
+                  <div className="grid md:grid-cols-2 gap-2">
+                      <div className="space-y-1">
                           <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-1">Voice Name</label>
+                              <label className="block text-[9px] font-medium text-gray-300 mb-0.5">Voice Name</label>
                               <input 
                                 type="text" 
                                 value={voiceName}
                                 onChange={(e) => setVoiceName(e.target.value)}
-                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-2 focus:ring-purple-500"
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1 text-[10px] text-white focus:ring-1 focus:ring-purple-500"
                                 placeholder="e.g. My Clone"
                               />
                           </div>
                           <div>
-                              <label className="block text-sm font-medium text-gray-300 mb-1">Description (Optional)</label>
+                              <label className="block text-[9px] font-medium text-gray-300 mb-0.5">Description</label>
                               <textarea 
                                 value={voiceDescription}
                                 onChange={(e) => setVoiceDescription(e.target.value)}
-                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-2 text-white focus:ring-2 focus:ring-purple-500 h-24"
-                                placeholder="e.g. A deep, american male voice, calm and authoritative."
+                                className="w-full bg-gray-800 border border-gray-600 rounded-md p-1 text-[10px] text-white focus:ring-1 focus:ring-purple-500 h-10"
+                                placeholder="Optional description..."
                               />
                           </div>
                       </div>
                       <div className="flex flex-col justify-between">
-                          <div className="bg-gray-800 p-4 rounded-lg">
-                              <p className="text-sm text-gray-400 mb-2">Selected Sample:</p>
+                          <div className="bg-gray-800 p-1.5 rounded-lg">
+                              <p className="text-[9px] text-gray-400 mb-0.5">Selected Sample:</p>
                               <div className="flex items-center justify-between">
-                                  <span className="font-mono text-purple-300 truncate max-w-[150px]">{selectedFile?.name}</span>
-                                  <span className="text-xs text-gray-500">{(selectedFile?.size || 0) / 1024 > 1000 ? `${((selectedFile?.size || 0) / 1024 / 1024).toFixed(2)} MB` : `${((selectedFile?.size || 0) / 1024).toFixed(0)} KB`}</span>
+                                  <span className="font-mono text-purple-300 truncate max-w-[100px] text-[10px]">{selectedFile?.name}</span>
+                                  <span className="text-[9px] text-gray-500">{(selectedFile?.size || 0) / 1024 > 1000 ? `${((selectedFile?.size || 0) / 1024 / 1024).toFixed(2)} MB` : `${((selectedFile?.size || 0) / 1024).toFixed(0)} KB`}</span>
                               </div>
                               {selectedFile && (
-                                  <audio controls src={URL.createObjectURL(selectedFile)} className="w-full mt-3 h-8" />
+                                  <audio controls src={URL.createObjectURL(selectedFile)} className="w-full mt-1 h-5" />
                               )}
                           </div>
-                          <div className="flex gap-3 mt-4">
+                          <div className="flex gap-2 mt-1">
                               <button 
                                 onClick={() => setCreationStep('select')}
-                                className="flex-1 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700"
+                                className="flex-1 px-2 py-1 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-700 text-[10px]"
                               >
                                   Back
                               </button>
                               <button 
                                 onClick={handleCreateVoice}
                                 disabled={isUploading || !voiceName}
-                                className="flex-1 px-4 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                                className="flex-1 px-2 py-1 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center text-[10px]"
                               >
                                   {isUploading ? (
                                       <>
-                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                        <div className="w-2 h-2 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></div>
                                         Cloning...
                                       </>
-                                  ) : 'Create Voice'}
+                                  ) : 'Create'}
                               </button>
                           </div>
                       </div>
@@ -334,45 +339,45 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
 
       {/* Library */}
        <div>
-        <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-semibold text-purple-300">Voice Library</h3>
-            <button onClick={loadVoices} className="text-xs text-gray-400 hover:text-white underline">Refresh</button>
+        <div className="flex items-center justify-between mb-1">
+            <h3 className="text-xs font-semibold text-purple-300">Voice Library</h3>
+            <button onClick={loadVoices} className="text-[9px] text-gray-400 hover:text-white underline">Refresh</button>
         </div>
         
         {clonedVoices.length === 0 ? (
-            <div className="text-center text-gray-500 bg-gray-900/50 p-8 rounded-lg border border-gray-700 border-dashed">
+            <div className="text-center text-gray-500 bg-gray-900/50 p-2 rounded-lg border border-gray-700 border-dashed text-[10px]">
                 <p>Your cloned voices will appear here.</p>
             </div>
         ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
                 {clonedVoices.map(voice => (
-                    <div key={voice.id} className="bg-gray-700 p-4 rounded-lg border border-gray-600 hover:border-purple-500 transition-colors group">
-                        <div className="flex justify-between items-start mb-2">
+                    <div key={voice.id} className="bg-gray-700 p-1.5 rounded-lg border border-gray-600 hover:border-purple-500 transition-colors group">
+                        <div className="flex justify-between items-start mb-0.5">
                             <div>
-                                <h4 className="font-bold text-white text-lg truncate max-w-[180px]" title={voice.name}>{voice.name}</h4>
-                                <span className="text-[10px] uppercase tracking-wider bg-gray-800 text-gray-400 px-2 py-0.5 rounded-full">
+                                <h4 className="font-bold text-white text-xs truncate max-w-[120px]" title={voice.name}>{voice.name}</h4>
+                                <span className="text-[7px] uppercase tracking-wider bg-gray-800 text-gray-400 px-1 py-0 rounded-full">
                                     {voice.category || 'Cloned'}
                                 </span>
                             </div>
                             <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleDelete(voice.id)} className="text-gray-400 hover:text-red-500 p-1 rounded">
-                                    <TrashIcon className="w-4 h-4" />
+                                <button onClick={() => handleDelete(voice.id)} className="text-gray-400 hover:text-red-500 p-0.5 rounded">
+                                    <TrashIcon className="w-3 h-3" />
                                 </button>
                             </div>
                         </div>
                         
                         {voice.description && (
-                            <p className="text-xs text-gray-400 mb-3 line-clamp-2 h-8">{voice.description}</p>
+                            <p className="text-[9px] text-gray-400 mb-0.5 line-clamp-1">{voice.description}</p>
                         )}
 
-                        <div className="flex items-center justify-between mt-2 pt-2 border-t border-gray-600">
-                             <span className="text-xs text-gray-500">{new Date(voice.cloneDate).toLocaleDateString()}</span>
+                        <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-600">
+                             <span className="text-[8px] text-gray-500">{new Date(voice.cloneDate).toLocaleDateString()}</span>
                              {voice.previewUrl && (
                                  <button 
                                     onClick={() => handlePreview(voice.previewUrl, voice.id)}
-                                    className={`flex items-center text-xs font-bold ${playingPreviewId === voice.id ? 'text-purple-400' : 'text-gray-300 hover:text-white'}`}
+                                    className={`flex items-center text-[9px] font-bold ${playingPreviewId === voice.id ? 'text-purple-400' : 'text-gray-300 hover:text-white'}`}
                                  >
-                                     {playingPreviewId === voice.id ? <StopIcon className="w-4 h-4 mr-1" /> : <PlayIcon className="w-4 h-4 mr-1" />}
+                                     {playingPreviewId === voice.id ? <StopIcon className="w-2.5 h-2.5 mr-1" /> : <PlayIcon className="w-2.5 h-2.5 mr-1" />}
                                      {playingPreviewId === voice.id ? 'Stop' : 'Preview'}
                                  </button>
                              )}
@@ -382,6 +387,7 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
             </div>
         )}
       </div>
+      <p className="text-[9px] text-gray-600 mt-2 text-center italic">You can also ask the AI to assist you with voice cloning directly in the Chat.</p>
     </div>
   );
 };

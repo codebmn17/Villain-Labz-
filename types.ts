@@ -34,6 +34,7 @@ export interface ChatAttachment {
   fileUri?: string; // URI for large files uploaded to Gemini
   isUploading?: boolean; // UI state
   error?: string;
+  originalFile?: File; // Reference for local tool usage
 }
 
 export interface AudioPlaylistItem {

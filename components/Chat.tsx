@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos } from '../services/geminiService';
-import { elevenLabsGenerate } from '../services/elevenLabsService';
+import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
 import AudioPlayer from './AudioPlayer';
@@ -130,43 +130,57 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files);
       
+      // 1. Add placeholders with isUploading=true
       const newAttachments: ChatAttachment[] = files.map(file => ({
           name: file.name,
           mimeType: file.type,
-          isUploading: true
+          isUploading: true,
+          originalFile: file // Keep reference to match later
       }));
+      
       setAttachments(prev => [...prev, ...newAttachments]);
 
-      try {
-        const processedAttachments = await Promise.all(files.map(async (file: File) => {
+      // 2. Process files concurrently
+      const processedAttachments = await Promise.all(files.map(async (file: File) => {
+        try {
             if (file.size > MAX_BASE64_SIZE) {
+                // Large file logic (Resumable upload)
                 try {
                     const uri = await uploadFileToGemini(file);
                     return {
                         name: file.name,
                         mimeType: file.type,
                         fileUri: uri,
-                        isUploading: false
-                    };
+                        isUploading: false,
+                        originalFile: file
+                    } as ChatAttachment;
                 } catch (err) {
                     console.error("Failed to upload large file", err);
                     return {
                         name: file.name,
                         mimeType: file.type,
                         isUploading: false, 
-                        error: "Upload failed"
-                    };
+                        error: "Upload failed",
+                        originalFile: file
+                    } as ChatAttachment;
                 }
             } else {
-                return new Promise<ChatAttachment>((resolve, reject) => {
+                // Small file logic (Base64)
+                return new Promise<ChatAttachment>((resolve) => {
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const res = reader.result as string;
                         if (!res) {
-                            reject(new Error("Failed to read file"));
+                            resolve({
+                                name: file.name,
+                                mimeType: file.type,
+                                isUploading: false,
+                                error: "Read failed",
+                                originalFile: file
+                            });
                             return;
                         }
                         const base64String = res.split(',')[1];
@@ -174,26 +188,40 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                             name: file.name,
                             mimeType: file.type,
                             data: base64String,
-                            isUploading: false
+                            isUploading: false,
+                            originalFile: file
                         });
                     };
-                    reader.onerror = reject;
+                    reader.onerror = () => resolve({
+                        name: file.name,
+                        mimeType: file.type,
+                        isUploading: false,
+                        error: "Read error",
+                        originalFile: file
+                    });
                     reader.readAsDataURL(file);
                 });
             }
-        }));
+        } catch (e) {
+             console.error("Unexpected error processing file", e);
+             return {
+                name: file.name,
+                mimeType: file.type,
+                isUploading: false,
+                error: "Processing failed",
+                originalFile: file
+            } as ChatAttachment;
+        }
+      }));
 
-        setAttachments(prev => {
-            const filtered = prev.filter(p => !files.find(f => f.name === p.name && p.isUploading));
-            return [...filtered, ...processedAttachments];
-        });
-
-      } catch (err) {
-          console.error("Error processing files", err);
-          addUIMessage('ai', 'Error processing attached files.');
-          setAttachments([]); 
-      }
+      // 3. Update state: Replace pending items with processed results
+      setAttachments(prev => {
+          // We remove the pending items that correspond to the files we just processed
+          const remaining = prev.filter(p => !files.includes(p.originalFile!) || !p.isUploading);
+          return [...remaining, ...processedAttachments];
+      });
     }
+    // Clear input to allow selecting the same files again if needed
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -263,6 +291,24 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
               result = { success: true, view: args.view };
               executionResultText = `Navigated to ${args.view}.`;
               break;
+            case 'cloneVoice':
+                const audioAttachment = currentAttachments.find(a => a.mimeType.startsWith('audio/'));
+                if (!audioAttachment || !audioAttachment.originalFile) {
+                     result = { success: false, error: "No audio file attached. Please upload an audio sample to clone." };
+                     executionResultText = "Failed: No audio file was attached to the request.";
+                } else {
+                     try {
+                         addUIMessage('ai', `Cloning voice "${args.name}" from attached sample...`);
+                         const newVoice = await addVoice(args.name as string, args.description as string || '', [audioAttachment.originalFile], appController.elevenLabsKey);
+                         appController.setClonedVoices([newVoice, ...appController.clonedVoices]);
+                         result = { success: true, voiceId: newVoice.id, voiceName: newVoice.name };
+                         executionResultText = `Successfully cloned voice: "${newVoice.name}".`;
+                     } catch (e: any) {
+                         result = { success: false, error: e.message || "Unknown error cloning voice" };
+                         executionResultText = `Error cloning voice: ${e.message}`;
+                     }
+                }
+                break;
             case 'searchYouTube':
                 try {
                     const videos = await searchYouTubeVideos(args.query as string);
@@ -296,7 +342,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                 }
 
                 addUIMessage('ai', 'Generating vocals & instrumentals...');
-                const audioUrl = await elevenLabsGenerate(lyricsToGenerate, appController.elevenLabsKey);
+                const audioUrl = await elevenLabsGenerate(lyricsToGenerate, appController.elevenLabsKey, args.voiceId as string);
                 
                 const newTrack: AudioPlaylistItem = {
                   id: Date.now().toString(), src: audioUrl, title, artist,
@@ -456,6 +502,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                                <span className="truncate max-w-[200px]">{att.name}</span>
                                <span className="ml-2 opacity-70 text-[10px] uppercase">({att.mimeType.split('/')[1] || 'FILE'})</span>
                                {att.fileUri && <span className="ml-1 text-[10px] text-green-400">[CLOUD]</span>}
+                               {att.error && <span className="ml-1 text-[10px] text-red-400">[FAILED]</span>}
                           </div>
                       ))}
                   </div>
@@ -490,12 +537,13 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
         {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-2 p-2 bg-gray-900/50 rounded-lg">
                 {attachments.map((att, index) => (
-                    <div key={index} className="flex items-center bg-gray-700 text-white text-xs px-2 py-1 rounded-full">
+                    <div key={index} className={`flex items-center text-white text-xs px-2 py-1 rounded-full ${att.error ? 'bg-red-900/50 border border-red-500' : 'bg-gray-700'}`}>
                         {att.isUploading ? (
                            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
                         ) : null}
                         <span className="truncate max-w-[150px]">{att.name}</span>
                         {att.fileUri && <span className="ml-1 text-[9px] bg-green-900 text-green-300 px-1 rounded">CLOUD</span>}
+                        {att.error && <span className="ml-1 text-[9px] text-red-300 font-bold">ERROR</span>}
                         <button 
                             onClick={() => removeAttachment(index)}
                             className="ml-2 text-gray-400 hover:text-red-400 font-bold focus:outline-none"

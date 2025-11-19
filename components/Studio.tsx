@@ -124,7 +124,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
         setGenerationStatus('Generating vocals & instrumentals...');
         
         // We use the lyrics from the state (which allows user edits after fetching)
-        const audioUrl = await elevenLabsGenerate(lyrics, elevenLabsKey);
+        const audioUrl = await elevenLabsGenerate(lyrics, elevenLabsKey, selectedVoiceId);
         
         const newTrack: AudioPlaylistItem = {
           id: Date.now().toString(),
@@ -365,6 +365,7 @@ const Studio: React.FC<StudioProps> = ({ clonedVoices, elevenLabsKey, generatedT
             {isGenerating ? 'Generating...' : 'Generate Music'}
           </button>
         </div>
+        <p className="text-[10px] text-gray-500 mt-2 text-center italic">You can also ask the AI to assist you in creating music directly in the Chat.</p>
       </div>
 
       {generatedTracks.length > 0 && !isGenerating && (

@@ -1,24 +1,24 @@
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DrumPadConfig, AudioPlaylistItem, DrumKit, SequencerPattern } from '../types';
 import { VolumeIcon } from './icons/VolumeIcon';
 import { PlayIcon } from './icons/PlayIcon';
 import { StopIcon } from './icons/StopIcon';
 import { SaveIcon } from './icons/SaveIcon';
 import { FolderOpenIcon } from './icons/FolderOpenIcon';
-import { TrashIcon } from './icons/TrashIcon';
-import { SequencerIcon } from './icons/SequencerIcon';
+import { MicIcon } from './icons/MicIcon';
 import { DrumIcon } from './icons/DrumIcon';
 import { saveTrackToDB } from '../services/storageService';
 
+// Soft clipping distortion curve (Warmth, not destruction)
 function makeDistortionCurve(amount: number) {
-  const k = typeof amount === 'number' ? amount : 50;
+  const k = amount; 
   const n_samples = 44100;
   const curve = new Float32Array(n_samples);
   const deg = Math.PI / 180;
   for (let i = 0; i < n_samples; ++i) {
     const x = (i * 2) / n_samples - 1;
-    curve[i] = ((3 + k) * x * 20 * deg) / (Math.PI + k * Math.abs(x));
+    curve[i] = (3 + k) * x * 20 * deg / (Math.PI + k * Math.abs(x));
   }
   return curve;
 }
@@ -35,10 +35,20 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const [activePadId, setActivePadId] = useState<number | null>(null);
   const [volume, setVolume] = useState(0.8);
   const [viewMode, setViewMode] = useState<'PADS' | 'SEQUENCER'>('PADS');
+  
+  // Recording States
+  const [isSequencerRecording, setIsSequencerRecording] = useState(false);
+  const [isAudioRecording, setIsAudioRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+
+  // Looping States
+  const [isLoopMode, setIsLoopMode] = useState(false);
+  const [activeLoops, setActiveLoops] = useState<Set<number>>(new Set());
 
   // Performance Controls
   const [bpm, setBpm] = useState(140);
-  const [pitchBend, setPitchBend] = useState(0); // Semitones -24 to +24
+  const [pitchBend, setPitchBend] = useState(0); // Semitones -12 to +12
+  const [noteRepeat, setNoteRepeat] = useState<'OFF' | '1/8' | '1/16'>('OFF');
 
   // Sequencer State
   const [isPlayingSequence, setIsPlayingSequence] = useState(false);
@@ -54,15 +64,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const [isPatternModalOpen, setIsPatternModalOpen] = useState(false);
   const [patternName, setPatternName] = useState('');
 
-  // Main Recording State
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-
-  // Looper State
-  const [isLoopRecording, setIsLoopRecording] = useState(false);
-  const [isLoopPlaying, setIsLoopPlaying] = useState(false);
-  const [loopBuffer, setLoopBuffer] = useState<AudioBuffer | null>(null);
-
   // Kit Management State
   const [savedKits, setSavedKits] = useState<DrumKit[]>([]);
   const [selectedKitId, setSelectedKitId] = useState<string>('default');
@@ -75,20 +76,15 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const reverbNodeRef = useRef<ConvolverNode | null>(null); 
   const destRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
   const noiseBufferRef = useRef<AudioBuffer | null>(null);
   
-  // Main Recorder Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<number | null>(null);
-
-  // Loop Recorder Refs
-  const loopRecorderRef = useRef<MediaRecorder | null>(null);
-  const loopChunksRef = useRef<Blob[]>([]);
-  const loopSourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
-
-  // Sequencer Interval Ref
+  // Interval Refs
   const sequencerIntervalRef = useRef<number | null>(null);
+  const noteRepeatIntervalRef = useRef<number | null>(null);
+  const recordingIntervalRef = useRef<number | null>(null);
+  const loopIntervalsRef = useRef<Map<number, number>>(new Map());
 
   // Load Kits & Patterns from LocalStorage
   useEffect(() => {
@@ -107,7 +103,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   }, []);
 
   // --- Sequencer Logic ---
-
   const toggleSequencerStep = (padId: number, stepIndex: number) => {
       setSequencerGrid(prev => {
           const newGrid = { ...prev };
@@ -193,19 +188,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     }
   };
 
-  const handleDeleteKit = (kitId: string) => {
-    if (window.confirm("Are you sure you want to delete this custom kit?")) {
-      const updatedKits = savedKits.filter(k => k.id !== kitId);
-      setSavedKits(updatedKits);
-      localStorage.setItem('villain_drum_kits', JSON.stringify(updatedKits));
-      if (selectedKitId === kitId) {
-        handleLoadKit('default');
-      }
-    }
-  };
-
-  // Helper: Generate Impulse Response for Reverb (Street/Warehouse feel)
-  const createImpulseResponse = (ctx: AudioContext, duration: number, decay: number, reverse: boolean = false) => {
+  const createImpulseResponse = (ctx: AudioContext, duration: number, decay: number) => {
     const sampleRate = ctx.sampleRate;
     const length = sampleRate * duration;
     const impulse = ctx.createBuffer(2, length, sampleRate);
@@ -213,7 +196,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     const right = impulse.getChannelData(1);
 
     for (let i = 0; i < length; i++) {
-      const n = reverse ? length - i : i;
+      const n = i;
       left[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
       right[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
     }
@@ -221,7 +204,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   };
 
   const createNoiseBuffer = (ctx: AudioContext) => {
-      const bufferSize = ctx.sampleRate * 2; // 2 seconds of noise
+      const bufferSize = ctx.sampleRate * 2; 
       const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
       const data = buffer.getChannelData(0);
       for (let i = 0; i < bufferSize; i++) {
@@ -230,7 +213,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       return buffer;
   };
 
-  // Initialize Audio Context
   const initAudio = () => {
     if (!audioCtxRef.current) {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -238,11 +220,10 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       const masterGain = ctx.createGain();
       const compressor = ctx.createDynamicsCompressor();
       const reverb = ctx.createConvolver(); 
-      const dest = ctx.createMediaStreamDestination();
+      const dest = ctx.createMediaStreamDestination(); // For recording
       
-      reverb.buffer = createImpulseResponse(ctx, 0.8, 3.0); // Tighter, darker room for rap
+      reverb.buffer = createImpulseResponse(ctx, 0.5, 4.0);
 
-      // Hardcore Compressor Settings
       compressor.threshold.setValueAtTime(-12, ctx.currentTime);
       compressor.knee.setValueAtTime(10, ctx.currentTime);
       compressor.ratio.setValueAtTime(12, ctx.currentTime);
@@ -250,10 +231,14 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       compressor.release.setValueAtTime(0.15, ctx.currentTime);
 
       compressor.connect(masterGain);
-      reverb.connect(masterGain);
+      
+      const reverbGain = ctx.createGain();
+      reverbGain.gain.value = 0.2;
+      reverb.connect(reverbGain);
+      reverbGain.connect(masterGain);
 
       masterGain.connect(ctx.destination);
-      masterGain.connect(dest);
+      masterGain.connect(dest); // IMPORTANT: Connect to recording stream
       
       audioCtxRef.current = ctx;
       masterGainRef.current = masterGain;
@@ -269,848 +254,806 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     }
   };
 
+  // --- Audio Recording Functions ---
+  const startAudioRecording = () => {
+    initAudio();
+    if (!destRef.current || !audioCtxRef.current) {
+        console.error("Audio Context or Dest not initialized");
+        return;
+    }
+
+    try {
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(destRef.current.stream);
+        
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            const newTrack: AudioPlaylistItem = {
+                id: Date.now().toString(),
+                src: audioUrl,
+                title: `Recording ${new Date().toLocaleTimeString()}`,
+                artist: 'Drum Session',
+                createdAt: Date.now(),
+                size: audioBlob.size
+            };
+            
+            await saveTrackToDB(newTrack);
+            setGeneratedTracks([newTrack, ...generatedTracks]);
+            
+            setRecordingTime(0);
+            if (recordingIntervalRef.current) clearInterval(recordingIntervalRef.current);
+        };
+
+        mediaRecorder.start();
+        mediaRecorderRef.current = mediaRecorder;
+        setIsAudioRecording(true);
+        
+        setRecordingTime(0);
+        recordingIntervalRef.current = window.setInterval(() => {
+            setRecordingTime(prev => prev + 1);
+        }, 1000);
+
+    } catch(e) {
+        console.error("Recording failed to start", e);
+    }
+  };
+
+  const stopAudioRecording = () => {
+    if (mediaRecorderRef.current && isAudioRecording) {
+        mediaRecorderRef.current.stop();
+        setIsAudioRecording(false);
+    }
+  };
+
+  const formatRecordingTime = (seconds: number) => {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   useEffect(() => {
     if (masterGainRef.current) {
       masterGainRef.current.gain.value = volume;
     }
   }, [volume]);
 
-  // --- Sound Generation Helpers ---
+  // --- Synthesis Engines ---
 
-  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'piano' | 'bell' | 'string' | 'pluck' | 'flute' | 'guitar' | 'brass' | 'cowbell', destination: AudioNode, detuneSteps: number = 0) => {
+  // Improved 808 Generator
+  const playTrapKick = (ctx: AudioContext, dest: AudioNode, time: number, freq: number, decay: number, dist: boolean, waveform: 'sine' | 'triangle' | 'square' | 'sawtooth' = 'sine') => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = waveform;
+      // Use passed freq, default to 60 if something is wrong.
+      const startFreq = freq > 0 ? freq : 60;
+      osc.frequency.setValueAtTime(startFreq, time);
+      
+      // Pitch Decay: Quick drop for punch, long for glide
+      const endFreq = 20; 
+      osc.frequency.exponentialRampToValueAtTime(endFreq, time + decay);
+
+      gain.gain.setValueAtTime(1.0, time);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+
+      osc.connect(gain);
+      
+      if (dist) {
+          const shaper = ctx.createWaveShaper();
+          shaper.curve = makeDistortionCurve(40); 
+          shaper.oversample = '4x';
+          gain.connect(shaper);
+          shaper.connect(dest);
+      } else {
+          gain.connect(dest);
+      }
+      
+      osc.start(time);
+      osc.stop(time + decay + 0.1);
+  };
+
+  const playTrapSnare = (ctx: AudioContext, dest: AudioNode, time: number, freq: number, decay: number, isClap: boolean) => {
+      if (!isClap) {
+          const osc = ctx.createOscillator();
+          const oscGain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq > 0 ? freq : 200, time);
+          oscGain.gain.setValueAtTime(0.5, time);
+          oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
+          osc.connect(oscGain);
+          oscGain.connect(dest);
+          osc.start(time);
+          osc.stop(time + 0.2);
+      }
+
+      if (noiseBufferRef.current) {
+          const noise = ctx.createBufferSource();
+          noise.buffer = noiseBufferRef.current;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'highpass';
+          filter.frequency.value = 1200; 
+          const noiseGain = ctx.createGain();
+          
+          if (isClap) {
+              noiseGain.gain.setValueAtTime(0, time);
+              noiseGain.gain.linearRampToValueAtTime(0.8, time + 0.001);
+              noiseGain.gain.exponentialRampToValueAtTime(0.1, time + 0.010);
+              noiseGain.gain.setValueAtTime(0.8, time + 0.015);
+              noiseGain.gain.exponentialRampToValueAtTime(0.1, time + 0.025);
+              noiseGain.gain.setValueAtTime(0.8, time + 0.030);
+              noiseGain.gain.exponentialRampToValueAtTime(0.01, time + decay);
+          } else {
+              noiseGain.gain.setValueAtTime(0.8, time);
+              noiseGain.gain.exponentialRampToValueAtTime(0.01, time + decay);
+          }
+          noise.connect(filter);
+          filter.connect(noiseGain);
+          noiseGain.connect(dest);
+          noise.start(time);
+          noise.stop(time + decay + 0.1);
+      }
+  };
+
+  const playHiHat = (ctx: AudioContext, dest: AudioNode, time: number, decay: number) => {
+      if (noiseBufferRef.current) {
+          const noise = ctx.createBufferSource();
+          noise.buffer = noiseBufferRef.current;
+          const filter = ctx.createBiquadFilter();
+          filter.type = 'highpass';
+          filter.frequency.value = 8000; 
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.6, time);
+          gain.gain.exponentialRampToValueAtTime(0.01, time + (decay < 0.05 ? 0.05 : decay)); 
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(dest);
+          noise.start(time);
+          noise.stop(time + decay + 0.1);
+      }
+  };
+
+  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'pluck' | 'lead', destination: AudioNode, detuneSteps: number = 0) => {
     const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator(); // For detuning/layering
+    const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
     
-    // Apply pitch bend (detuneSteps is in semitones)
     const tunedFreq = freq * Math.pow(2, detuneSteps / 12);
-
     gain.connect(destination);
 
-    if (type === 'piano') {
-        osc1.type = 'sine';
-        osc2.type = 'triangle';
-        osc1.frequency.setValueAtTime(tunedFreq, time);
-        osc2.frequency.setValueAtTime(tunedFreq, time);
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.6, time + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
-    } else if (type === 'pluck') {
-        // Clean pluck for melody
-        osc1.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(tunedFreq, time);
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(tunedFreq * 2, time);
-        filter.frequency.exponentialRampToValueAtTime(tunedFreq, time + 0.1);
-        
-        osc1.connect(filter);
-        filter.connect(gain);
-        
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.5, time + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
-        osc1.start(time);
-        osc1.stop(time + duration);
-        return;
-    } else if (type === 'bell') {
-        osc1.type = 'sine';
-        osc2.type = 'sine';
-        osc1.frequency.setValueAtTime(tunedFreq, time);
-        osc2.frequency.setValueAtTime(tunedFreq * 3.5, time); // Overtone
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.4, time + 0.005);
-        gain.gain.exponentialRampToValueAtTime(0.01, time + duration * 1.5);
-    } else if (type === 'string') {
-        osc1.type = 'sawtooth';
-        osc2.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(tunedFreq, time);
-        osc2.frequency.setValueAtTime(tunedFreq * 1.005, time); // Detune
-        const filter = ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(500, time);
-        filter.frequency.linearRampToValueAtTime(2000, time + duration/2);
-        osc1.connect(filter);
-        osc2.connect(filter);
-        filter.connect(gain);
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.3, time + 0.2);
-        gain.gain.linearRampToValueAtTime(0, time + duration);
-        osc1.start(time);
-        osc2.start(time);
-        osc1.stop(time + duration);
-        osc2.stop(time + duration);
-        return;
-    } else if (type === 'brass') {
-         osc1.type = 'sawtooth';
-         osc2.type = 'sawtooth';
-         osc1.frequency.setValueAtTime(tunedFreq, time);
-         osc2.frequency.setValueAtTime(tunedFreq * 1.01, time);
-         const filter = ctx.createBiquadFilter();
-         filter.type = 'lowpass';
-         filter.frequency.setValueAtTime(tunedFreq * 1, time);
-         filter.frequency.linearRampToValueAtTime(tunedFreq * 5, time + 0.05); // Brass swell
-         filter.frequency.exponentialRampToValueAtTime(tunedFreq * 1, time + duration);
-         osc1.connect(filter);
-         osc2.connect(filter);
-         filter.connect(gain);
-         gain.gain.setValueAtTime(0, time);
-         gain.gain.linearRampToValueAtTime(0.5, time + 0.05);
-         gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
-         osc1.start(time);
-         osc2.start(time);
-         osc1.stop(time + duration);
-         osc2.stop(time + duration);
-         return;
-    } else if (type === 'cowbell') {
-         osc1.type = 'square';
-         osc1.frequency.setValueAtTime(tunedFreq, time);
-         const filter = ctx.createBiquadFilter();
-         filter.type = 'bandpass';
-         filter.frequency.value = 2000 * Math.pow(2, detuneSteps / 12);
-         osc1.connect(filter);
-         filter.connect(gain);
-         gain.gain.setValueAtTime(0.6, time);
-         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
-         osc1.start(time);
-         osc1.stop(time + 0.1);
-         return;
-    }
-    
-    osc1.connect(gain);
-    if(type !== 'flute' && type !== 'guitar') {
-         osc2.connect(gain);
-         osc2.start(time);
-         osc2.stop(time + duration);
-    }
+    osc1.type = 'sawtooth';
+    osc2.type = 'square';
+    osc1.frequency.setValueAtTime(tunedFreq, time);
+    osc2.frequency.setValueAtTime(tunedFreq * 1.01, time); // Detune
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(tunedFreq * 4, time);
+    filter.frequency.exponentialRampToValueAtTime(tunedFreq, time + 0.2);
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain);
+
+    gain.gain.setValueAtTime(0, time);
+    gain.gain.linearRampToValueAtTime(0.3, time + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+
     osc1.start(time);
     osc1.stop(time + duration);
+    osc2.start(time);
+    osc2.stop(time + duration);
   };
 
-  const triggerSound = (type: 'kick' | 'snare' | 'hihat' | 'bass' | 'crash' | 'shaker' | 'tom' | 'snap' | 'gunshot' | 'siren', time: number, freq: number = 0, duration: number = 0.2) => {
-      const ctx = audioCtxRef.current;
-      const compressor = compressorRef.current;
-      if(!ctx || !compressor) return;
-      
-      // Apply Global Pitch Shift to hardcoded FX
-      const pitchMult = Math.pow(2, pitchBend / 12);
-
-      if (type === 'kick') {
-          const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(150 * pitchMult, time);
-          osc.frequency.exponentialRampToValueAtTime(40 * pitchMult, time + 0.1);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(1, time);
-          g.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
-          osc.connect(g).connect(compressor);
-          osc.start(time);
-          osc.stop(time + 0.3);
-      } else if (type === 'snare') {
+  // --- FX Synths (Refined logic) ---
+  const playGunCock = (ctx: AudioContext, dest: AudioNode, time: number) => {
+      // Noise burst for mechanism
+      if (noiseBufferRef.current) {
           const noise = ctx.createBufferSource();
-          noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
+          noise.buffer = noiseBufferRef.current;
           const filter = ctx.createBiquadFilter();
-          filter.type = 'highpass';
-          filter.frequency.value = 1000 * pitchMult;
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0.7, time);
-          g.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-          noise.connect(filter).connect(g).connect(compressor);
+          filter.type = 'bandpass';
+          filter.frequency.value = 2500;
+          const gain = ctx.createGain();
+          gain.gain.setValueAtTime(0.8, time);
+          gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+          noise.connect(filter);
+          filter.connect(gain);
+          gain.connect(dest);
           noise.start(time);
-          noise.stop(time + 0.2);
-          
-          // Add body to snare
-          const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(200 * pitchMult, time);
-          osc.frequency.exponentialRampToValueAtTime(150 * pitchMult, time + 0.1);
-          const og = ctx.createGain();
-          og.gain.setValueAtTime(0.5, time);
-          og.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
-          osc.connect(og).connect(compressor);
-          osc.start(time);
-          osc.stop(time + 0.15);
-
-      } else if (type === 'hihat') {
-          const osc = ctx.createOscillator();
-          osc.type = 'square';
-          osc.frequency.value = 8000 * pitchMult;
-          const filter = ctx.createBiquadFilter();
-          filter.type = 'highpass';
-          filter.frequency.value = 7000 * pitchMult;
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(0.3, time);
-          g.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
-          osc.connect(filter).connect(g).connect(compressor);
-          osc.start(time);
-          osc.stop(time + 0.05);
-      } else if (type === 'crash') {
-           const noise = ctx.createBufferSource();
-           noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
-           const filter = ctx.createBiquadFilter();
-           filter.type = 'highpass';
-           filter.frequency.value = 3000 * pitchMult;
-           const g = ctx.createGain();
-           g.gain.setValueAtTime(0.4, time);
-           g.gain.exponentialRampToValueAtTime(0.01, time + 1.5);
-           noise.connect(filter).connect(g).connect(compressor);
-           noise.start(time);
-           noise.stop(time + 1.5);
-      } else if (type === 'gunshot') {
-          // Composite Gunshot: Low Thud + Noise Burst
-          const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(80 * pitchMult, time);
-          osc.frequency.exponentialRampToValueAtTime(20 * pitchMult, time + 0.4);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(1, time);
-          g.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
-          
-          const noise = ctx.createBufferSource();
-          noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
-          const nf = ctx.createBiquadFilter();
-          nf.type = 'lowpass';
-          nf.frequency.value = 1200 * pitchMult;
-          const ng = ctx.createGain();
-          ng.gain.setValueAtTime(1, time);
-          ng.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
-          
-          osc.connect(g).connect(compressor);
-          noise.connect(nf).connect(ng).connect(compressor);
-          
-          osc.start(time);
-          osc.stop(time + 0.5);
-          noise.start(time);
-          noise.stop(time + 0.5);
-      } else if (type === 'siren') {
-         const osc = ctx.createOscillator();
-         osc.type = 'sawtooth';
-         osc.frequency.setValueAtTime(800 * pitchMult, time);
-         osc.frequency.linearRampToValueAtTime(1200 * pitchMult, time + 0.5);
-         osc.frequency.linearRampToValueAtTime(800 * pitchMult, time + 1.0);
-         const g = ctx.createGain();
-         g.gain.setValueAtTime(0.5, time);
-         g.gain.exponentialRampToValueAtTime(0.01, time + 1.2);
-         osc.connect(g).connect(compressor);
-         osc.start(time);
-         osc.stop(time + 1.2);
+          noise.stop(time + 0.15);
       }
-  };
-
-  // --- Loop/Sequence Logic ---
-
-  const playSpecialSound = (padId: number, config: DrumPadConfig) => {
-    const ctx = audioCtxRef.current;
-    const compressor = compressorRef.current;
-    if (!ctx || !compressor) return;
-
-    const now = ctx.currentTime;
-    const beat = 60 / bpm; 
-
-    // Purple Row (8-11): Play Melodic Scale (Affected by Pitch Bend)
-    if (padId >= 8 && padId <= 11) {
-        playSynthNote(ctx, config.baseFrequency, now, 0.5, 'pluck', compressor, pitchBend);
-        return;
-    }
-
-    // Row 4: Generated Beat Loops (Keys Z-V) - Melodies affected by pitchBend
-    if (padId === 16) { // Chopper Speed (Tech N9ne Style)
-        for(let bar = 0; bar < 4; bar++) {
-            const barStart = now + (bar * 4 * beat);
-            // Kick: 1, 1.66(trip), 2.33(trip), 3.5
-            triggerSound('kick', barStart);
-            triggerSound('kick', barStart + beat * 1.66);
-            triggerSound('kick', barStart + beat * 2.33);
-            triggerSound('kick', barStart + beat * 3.5);
-            
-            // Snare: 2, 4
-            triggerSound('snare', barStart + beat);
-            triggerSound('snare', barStart + beat * 3);
-
-            // Hats
-            for(let i=0; i<12; i++) {
-                 if (i !== 3 && i !== 9) triggerSound('hihat', barStart + i * (beat/3), 0, 0.05);
-            }
-            
-            // Brass hit (Pitch Bend applied)
-            if (bar % 2 === 0) {
-                playSynthNote(ctx, 146.83, barStart, 0.5, 'brass', compressor, pitchBend); // D3
-                playSynthNote(ctx, 73.42, barStart, 0.5, 'brass', compressor, pitchBend); // D2
-            }
-            // Fills
-            if (bar === 3) {
-                triggerSound('snare', barStart + beat * 3.25);
-                triggerSound('snare', barStart + beat * 3.5);
-                triggerSound('snare', barStart + beat * 3.75);
-                triggerSound('gunshot', barStart + beat * 3.8);
-            }
-        }
-        
-    } else if (padId === 17) { // Shady Dirge (Eminem Style)
-        // Chromatic Walkdown D -> C# -> C -> B
-        const notes = [293.66, 277.18, 261.63, 246.94]; 
-        
-        for(let bar = 0; bar < 4; bar++) {
-            const barStart = now + (bar * 4 * beat);
-            
-            // Drums
-            triggerSound('kick', barStart);
-            triggerSound('kick', barStart + beat * 1.5);
-            triggerSound('kick', barStart + beat * 2.5);
-            triggerSound('snare', barStart + beat);
-            triggerSound('snare', barStart + beat * 3);
-            
-            // Hats
-            for(let i=0; i<8; i++) triggerSound('hihat', barStart + i * (beat/2));
-
-            // Piano Melody (Pitch Bend applied)
-            const note = notes[bar % 4];
-            playSynthNote(ctx, note, barStart, 0.4, 'piano', compressor, pitchBend);
-            playSynthNote(ctx, note, barStart + beat, 0.4, 'piano', compressor, pitchBend);
-            playSynthNote(ctx, note, barStart + beat * 2, 0.4, 'piano', compressor, pitchBend);
-            playSynthNote(ctx, note, barStart + beat * 3, 0.4, 'piano', compressor, pitchBend);
-            
-            // Bell accent
-            playSynthNote(ctx, note * 2, barStart, 0.8, 'bell', compressor, pitchBend);
-        }
-        
-    } else if (padId === 18) { // Detroit Rock (Heavy Stomp)
-        for(let bar = 0; bar < 4; bar++) {
-             const barStart = now + (bar * 4 * beat);
-             
-             triggerSound('kick', barStart);
-             triggerSound('kick', barStart + beat * 2);
-             triggerSound('snare', barStart + beat);
-             triggerSound('snare', barStart + beat * 3);
-             
-             // Guitar Riff (Pitch Bend applied)
-             if (bar % 2 === 0) {
-                 playSynthNote(ctx, 146.83, barStart, 0.2, 'guitar', compressor, pitchBend);
-                 playSynthNote(ctx, 146.83, barStart + beat * 0.5, 0.2, 'guitar', compressor, pitchBend);
-                 playSynthNote(ctx, 174.61, barStart + beat * 1.5, 0.3, 'guitar', compressor, pitchBend);
-             } else {
-                 playSynthNote(ctx, 130.81, barStart, 0.2, 'guitar', compressor, pitchBend);
-                 playSynthNote(ctx, 130.81, barStart + beat * 0.5, 0.2, 'guitar', compressor, pitchBend);
-                 playSynthNote(ctx, 123.47, barStart + beat * 1.5, 0.3, 'guitar', compressor, pitchBend);
-             }
-        }
-
-    } else if (padId === 19) { // Worldwide (Orchestral Trap)
-         for(let bar = 0; bar < 4; bar++) {
-            const barStart = now + (bar * 4 * beat);
-            
-            triggerSound('kick', barStart);
-            triggerSound('kick', barStart + beat * 2.5); 
-            triggerSound('snare', barStart + beat * 2);
-            
-            for(let i=0; i<16; i++) triggerSound('hihat', barStart + i * (beat/4));
-            
-            // Strings (Pitch Bend applied)
-            if (bar === 0 || bar === 2) {
-                playSynthNote(ctx, 293.66, barStart, 2.0, 'string', compressor, pitchBend); 
-                playSynthNote(ctx, 349.23, barStart, 2.0, 'string', compressor, pitchBend); 
-            } else {
-                 playSynthNote(ctx, 277.18, barStart, 2.0, 'string', compressor, pitchBend); 
-                 playSynthNote(ctx, 329.63, barStart, 2.0, 'string', compressor, pitchBend); 
-            }
-            
-            // Chant
-            if (bar === 3) {
-                playSynthNote(ctx, 440, barStart + beat * 3, 0.1, 'cowbell', compressor, pitchBend);
-                playSynthNote(ctx, 440, barStart + beat * 3.5, 0.1, 'cowbell', compressor, pitchBend);
-            }
-         }
-    }
-    // Fallbacks
-    else if (padId >= 12 && padId <= 14) {
-        if(config.soundType === 'fx' && padId === 12) {
-             // Gun Cock
-             const noise = ctx.createBufferSource();
-             noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
-             const f = ctx.createBiquadFilter();
-             f.type = 'bandpass';
-             f.frequency.value = 2500 * Math.pow(2, pitchBend / 12);
-             const g = ctx.createGain();
-             g.gain.setValueAtTime(0.5, now);
-             g.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
-             g.gain.setValueAtTime(0.6, now + 0.15);
-             g.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
-             noise.connect(f).connect(g).connect(compressor);
-             noise.start(now);
-             noise.stop(now + 0.3);
-        } else if (config.soundType === 'fx' && padId === 13) { 
-            triggerSound('gunshot', now);
-        } else if (config.soundType === 'fx' && padId === 14) {
-            triggerSound('siren', now);
-        }
-    }
-  };
-
-  const playPad = useCallback((pad: DrumPadConfig) => {
-    initAudio();
-    setActivePadId(pad.id);
-    setTimeout(() => setActivePadId(null), 150);
-
-    const ctx = audioCtxRef.current;
-    const master = masterGainRef.current;
-    const compressor = compressorRef.current;
-    const reverb = reverbNodeRef.current;
-
-    if (!ctx || !master || !compressor || !reverb) return;
-
-    if ((pad.id >= 8 && pad.id <= 11) || (pad.id >= 16) || (pad.id >= 12 && pad.id <= 14)) {
-        playSpecialSound(pad.id, pad);
-        return;
-    }
-
-    // Standard Synthesis (Row 0 Bass & Row 1 Drums)
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const distortion = ctx.createWaveShaper();
-
-    osc.type = pad.waveform;
-    
-    // Apply Pitch Bend to ALL standard synth pads (Bass, Kicks, Snares if synthesized)
-    const pitchMult = Math.pow(2, pitchBend / 12);
-    const tunedBaseFreq = pad.baseFrequency * pitchMult;
-
-    if (pad.soundType === 'bass') {
-        gain.gain.setValueAtTime(0, t);
-        gain.gain.linearRampToValueAtTime(1.0, t + 0.02);
-        
-        osc.frequency.setValueAtTime(tunedBaseFreq + 120, t); 
-        osc.frequency.exponentialRampToValueAtTime(tunedBaseFreq, t + pad.pitchDecay);
-        
-        gain.gain.exponentialRampToValueAtTime(0.8, t + 0.1);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + pad.volumeDecay);
-    } else {
-        osc.frequency.setValueAtTime(tunedBaseFreq, t);
-        if (pad.pitchDecay > 0) {
-             osc.frequency.exponentialRampToValueAtTime(tunedBaseFreq / 2, t + pad.pitchDecay);
-        }
-        gain.gain.setValueAtTime(1.0, t);
-        gain.gain.exponentialRampToValueAtTime(0.001, t + pad.volumeDecay);
-    }
-
-    if (pad.distortion) {
-      distortion.curve = makeDistortionCurve(pad.soundType === 'bass' ? 20 : 100); 
-      distortion.oversample = '4x';
-      osc.connect(distortion);
-      distortion.connect(gain);
-    } else {
+      // Metallic click
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(1200, time);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.3, time);
+      gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
       osc.connect(gain);
-    }
-    
-    if (pad.noise) {
+      gain.connect(dest);
+      osc.start(time);
+      osc.stop(time + 0.05);
+  };
+
+  const playGunBlast = (ctx: AudioContext, dest: AudioNode, time: number) => {
+      if (noiseBufferRef.current) {
         const noise = ctx.createBufferSource();
-        noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
-        const noiseFilter = ctx.createBiquadFilter();
-        const noiseGain = ctx.createGain();
+        noise.buffer = noiseBufferRef.current;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(3000, time);
+        filter.frequency.exponentialRampToValueAtTime(100, time + 0.4);
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(1.0, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.8);
         
-        if(pad.soundType === 'hihat') {
-            noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 5000 * pitchMult;
-            noiseGain.gain.setValueAtTime(0.4, t);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
-        } else if (pad.soundType === 'snare') {
-            noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 800 * pitchMult;
-            noiseGain.gain.setValueAtTime(0.6, t);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-        }
+        // Distortion for aggression
+        const shaper = ctx.createWaveShaper();
+        shaper.curve = makeDistortionCurve(100);
         
-        noise.connect(noiseFilter).connect(noiseGain).connect(gain);
-        noise.start(t);
-        noise.stop(t + pad.volumeDecay);
-    }
-
-    gain.connect(compressor); 
-    
-    const reverbSend = ctx.createGain();
-    reverbSend.gain.value = pad.soundType === 'bass' ? 0.05 : 0.3; 
-    gain.connect(reverbSend);
-    reverbSend.connect(reverb);
-
-    osc.start(t);
-    osc.stop(t + pad.volumeDecay);
-
-  }, [drumPads, volume, pitchBend, bpm]); // Added bpm to dependencies
-
-  // Sequencer Player Clock
-  useEffect(() => {
-      if (isPlayingSequence) {
-          const stepTime = (60000 / bpm) / 4;
-          sequencerIntervalRef.current = window.setInterval(() => {
-              setCurrentStep(prev => {
-                  const nextStep = (prev + 1) % 16;
-                  drumPads.forEach(pad => {
-                      if (sequencerGrid[pad.id][nextStep]) {
-                          playPad(pad);
-                      }
-                  });
-                  return nextStep;
-              });
-          }, stepTime);
-      } else {
-          if (sequencerIntervalRef.current) {
-              clearInterval(sequencerIntervalRef.current);
-              sequencerIntervalRef.current = null;
-          }
-          setCurrentStep(0);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(shaper);
+        shaper.connect(dest);
+        noise.start(time);
+        noise.stop(time + 1.0);
+        
+        // Low thump
+        playTrapKick(ctx, dest, time, 60, 0.3, true, 'square');
       }
+  };
 
-      return () => {
-          if (sequencerIntervalRef.current) {
-              clearInterval(sequencerIntervalRef.current);
-          }
+  const playSiren = (ctx: AudioContext, dest: AudioNode, time: number) => {
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      osc1.type = 'sawtooth';
+      osc2.type = 'square';
+      
+      const gain = ctx.createGain();
+      
+      // LFO Pitch Modulation
+      const now = time;
+      [osc1, osc2].forEach(osc => {
+          osc.frequency.setValueAtTime(600, now);
+          osc.frequency.linearRampToValueAtTime(1200, now + 0.5);
+          osc.frequency.linearRampToValueAtTime(600, now + 1.0);
+          osc.frequency.linearRampToValueAtTime(1200, now + 1.5);
+          osc.frequency.linearRampToValueAtTime(600, now + 2.0);
+          osc.connect(gain);
+          osc.start(now);
+          osc.stop(now + 2.0);
+      });
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.3, now + 1.8);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
+      gain.connect(dest);
+  };
+
+  const playScratch = (ctx: AudioContext, dest: AudioNode, time: number) => {
+      if (noiseBufferRef.current) {
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBufferRef.current;
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.Q.value = 8;
+        
+        // "Wiki-Wiki" filter sweep
+        filter.frequency.setValueAtTime(800, time);
+        filter.frequency.linearRampToValueAtTime(2000, time + 0.05);
+        filter.frequency.linearRampToValueAtTime(500, time + 0.12);
+        
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.6, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.15);
+        
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(dest);
+        noise.start(time);
+        noise.stop(time + 0.2);
+      }
+  };
+
+  // --- Enhanced Loops ---
+  const playGeneratedLoop = (padId: number, ctx: AudioContext, dest: AudioNode, time: number) => {
+      const t = time;
+      const beat = 60 / bpm;
+      const bar = beat * 4;
+      
+      const loopGain = ctx.createGain();
+      loopGain.gain.value = 2.0; // Boost loop volume
+      
+      // Heavy Bus Compression & Saturation
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -24;
+      comp.ratio.value = 12;
+      
+      const shaper = ctx.createWaveShaper();
+      shaper.curve = makeDistortionCurve(20); // Mild saturation
+      
+      loopGain.connect(comp);
+      comp.connect(shaper);
+      shaper.connect(dest);
+
+      // Heavy Synth Helper (Sub + Saw)
+      const playHeavySynth = (startTime: number, freq: number, dur: number) => {
+           const osc = ctx.createOscillator();
+           const sub = ctx.createOscillator();
+           osc.type = 'sawtooth';
+           sub.type = 'square'; // Sub osc
+           
+           osc.frequency.setValueAtTime(freq, startTime);
+           sub.frequency.setValueAtTime(freq / 2, startTime); // Octave down
+           
+           const g = ctx.createGain();
+           g.gain.setValueAtTime(0.4, startTime);
+           g.gain.exponentialRampToValueAtTime(0.001, startTime + dur);
+           
+           const filter = ctx.createBiquadFilter();
+           filter.type = 'lowpass';
+           filter.frequency.setValueAtTime(freq * 6, startTime);
+           filter.frequency.exponentialRampToValueAtTime(freq, startTime + dur);
+           
+           osc.connect(filter);
+           sub.connect(filter);
+           filter.connect(g);
+           g.connect(loopGain);
+           
+           osc.start(startTime);
+           sub.start(startTime);
+           osc.stop(startTime + dur);
+           sub.stop(startTime + dur);
       };
-  }, [isPlayingSequence, bpm, drumPads, sequencerGrid, playPad]);
-
-  // Keyboard Mapping with Repeat Fix
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      const key = e.key.toUpperCase();
-      const pad = drumPads.find(p => p.keyTrigger === key);
-      if (pad) {
-        playPad(pad);
+      
+      if (padId === 16) { // Chopper
+          for(let i=0; i<32; i++) playHiHat(ctx, loopGain, t + i*(beat/2), 0.03);
+          playTrapKick(ctx, loopGain, t, 50, 0.6, true, 'sine');
+          playTrapKick(ctx, loopGain, t + beat*1.5, 50, 0.6, true, 'sine');
+          playTrapKick(ctx, loopGain, t + beat*2.5, 45, 0.8, true, 'triangle');
+          playTrapKick(ctx, loopGain, t + beat*3.25, 40, 0.4, true, 'square');
+      } 
+      else if (padId === 17) { // Dirge
+          playTrapKick(ctx, loopGain, t, 35, 3.0, true, 'triangle'); 
+          playTrapKick(ctx, loopGain, t+bar*2, 30, 3.0, true, 'triangle');
+          
+          // Heavy chords
+          const chord = (st: number, notes: number[]) => notes.forEach(n => playHeavySynth(st, n, bar));
+          chord(t, [144.16, 216.00]); // D, A
+          chord(t+bar*2, [128.29, 192.43]); // C, G
       }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [drumPads, playPad]);
+      else if (padId === 18) { // Rock
+          for(let i=0; i<16; i++) {
+              const f = (i%4===0) ? 72 : (i%2===0 ? 108 : 0);
+              if(f) playTrapKick(ctx, loopGain, t+i*beat, f, 0.3, true, 'sawtooth');
+          }
+          playHeavySynth(t, 144, bar*2);
+      }
+      else if (padId === 19) { // Arp
+          const arp = [288, 342, 384, 432];
+          playTrapKick(ctx, loopGain, t, 50, 2.0, true, 'sine');
+          playTrapKick(ctx, loopGain, t+beat*2, 50, 2.0, true, 'sine');
+          for(let i=0; i<16; i++) playSynthNote(ctx, arp[i%4], t+i*beat/2, 0.2, 'pluck', loopGain);
+      }
+  }
 
-
-  // Recording Logic
-  const toggleRecord = async () => {
-    if (isRecording) {
-      mediaRecorderRef.current?.stop();
-      if (timerRef.current) window.clearInterval(timerRef.current);
-      setIsRecording(false);
-      setRecordingTime(0);
-    } else {
+  const triggerPad = (padId: number, when: number = 0) => {
       initAudio();
-      if (!destRef.current) return;
-      
-      chunksRef.current = [];
-      const recorder = new MediaRecorder(destRef.current.stream);
-      
-      recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
-      recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
-        const newTrack: AudioPlaylistItem = {
-          id: Date.now().toString(),
-          title: `Drum Session ${new Date().toLocaleTimeString()}`,
-          artist: 'DJ Gemini',
-          src: url,
-          createdAt: Date.now(),
-        };
-        
-        // Persist to DB then update state
-        await saveTrackToDB(newTrack);
-        setGeneratedTracks([...generatedTracks, newTrack]);
-      };
+      const ctx = audioCtxRef.current;
+      if (!ctx || !compressorRef.current) return;
 
-      recorder.start();
-      mediaRecorderRef.current = recorder;
-      setIsRecording(true);
-      
-      const startTime = Date.now();
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime(Math.floor((Date.now() - startTime) / 1000));
-      }, 1000);
-    }
+      const pad = drumPads[padId];
+      if (!pad) return;
+
+      setActivePadId(padId);
+      setTimeout(() => setActivePadId(null), 150);
+
+      const time = when || ctx.currentTime;
+      const master = compressorRef.current;
+      const freq = pad.baseFrequency * Math.pow(2, pitchBend / 12);
+
+      // --- Loop Logic (Loops Toggling) ---
+      // If this call is from user interaction (not sequencer), handle loop toggling
+      // We check 'when' === 0 as a proxy for immediate user interaction
+      if (isLoopMode && when === 0) {
+          if (activeLoops.has(padId)) {
+              // Stop Loop
+              const interval = loopIntervalsRef.current.get(padId);
+              if (interval) clearInterval(interval);
+              loopIntervalsRef.current.delete(padId);
+              setActiveLoops(prev => {
+                  const next = new Set(prev);
+                  next.delete(padId);
+                  return next;
+              });
+              return; // Don't trigger single shot if stopping
+          } else {
+              // Start Loop
+              setActiveLoops(prev => new Set(prev).add(padId));
+              const beatMs = (60 / bpm) * 1000;
+              const loopDurationMs = padId >= 16 ? beatMs * 16 : beatMs * 4; 
+              
+              const interval = window.setInterval(() => {
+                   // Re-fetch pad to get updated pitch bend if needed
+                   const currentPad = drumPads[padId];
+                   // Always init audio in interval to prevent suspension issues
+                   if(audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
+                   if(audioCtxRef.current && compressorRef.current) {
+                      const currentFreq = currentPad.baseFrequency * Math.pow(2, pitchBend / 12);
+                      triggerSound(audioCtxRef.current, compressorRef.current, audioCtxRef.current.currentTime, currentPad, currentFreq);
+                   }
+              }, loopDurationMs);
+              
+              loopIntervalsRef.current.set(padId, interval);
+          }
+      }
+
+      // Sequencer Record
+      if (isSequencerRecording && isPlayingSequence && padId < 16 && when === 0) {
+          const stepToRecord = Math.round(currentStep) % 16;
+          setSequencerGrid(prev => {
+              const newGrid = { ...prev };
+              newGrid[padId][stepToRecord] = true;
+              return newGrid;
+          });
+      }
+
+      // Trigger Immediate Sound
+      triggerSound(ctx, master, time, pad, freq);
   };
 
-  // Looper Logic
-  const toggleLoopRecord = () => {
-    if (isLoopRecording) {
-        loopRecorderRef.current?.stop();
-        setIsLoopRecording(false);
-    } else {
-        initAudio();
-        if(!destRef.current) return;
-        
-        loopChunksRef.current = [];
-        const recorder = new MediaRecorder(destRef.current.stream);
-        recorder.ondataavailable = e => loopChunksRef.current.push(e.data);
-        recorder.onstop = async () => {
-            const blob = new Blob(loopChunksRef.current, { type: 'audio/webm' });
-            const arrayBuffer = await blob.arrayBuffer();
-            if(audioCtxRef.current) {
-                const buffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
-                setLoopBuffer(buffer);
-                setIsLoopPlaying(true);
+  const triggerSound = (ctx: AudioContext, master: AudioNode, time: number, pad: DrumPadConfig, freq: number) => {
+      if (pad.id >= 16) {
+           playGeneratedLoop(pad.id, ctx, master, time);
+           return;
+      }
+
+      if (pad.soundType === 'bass' || pad.soundType === 'kick') {
+          playTrapKick(ctx, master, time, freq, pad.pitchDecay, pad.distortion, pad.waveform as any);
+      } 
+      else if (pad.soundType === 'snare') {
+          playTrapSnare(ctx, master, time, freq, pad.volumeDecay, pad.label.toLowerCase().includes('clap'));
+      }
+      else if (pad.soundType === 'hihat') {
+          playHiHat(ctx, master, time, pad.volumeDecay);
+      }
+      else if (pad.soundType === 'synth') {
+          playSynthNote(ctx, freq, time, pad.volumeDecay, 'pluck', master, pitchBend);
+      }
+      else if (pad.soundType === 'fx') {
+            // Strict ID matching for reliable FX
+            if (pad.id === 12) playGunCock(ctx, master, time);
+            else if (pad.id === 13) playGunBlast(ctx, master, time);
+            else if (pad.id === 14) playSiren(ctx, master, time);
+            else if (pad.id === 15) playScratch(ctx, master, time);
+            else {
+                // Fallback only if ID doesn't match
+                 const label = pad.label.toLowerCase();
+                 if (label.includes('gun') && label.includes('cock')) playGunCock(ctx, master, time);
+                 else if (label.includes('blast')) playGunBlast(ctx, master, time);
+                 else if (label.includes('siren')) playSiren(ctx, master, time);
+                 else if (label.includes('scratch')) playScratch(ctx, master, time);
+                 else playTrapKick(ctx, master, time, 100, 0.2, true, 'sawtooth');
             }
-        };
-        recorder.start();
-        loopRecorderRef.current = recorder;
-        setIsLoopRecording(true);
-    }
-  };
-
-  const toggleLoopPlay = () => {
-      if(isLoopPlaying) {
-          if(loopSourceNodeRef.current) {
-              loopSourceNodeRef.current.stop();
-              loopSourceNodeRef.current = null;
-          }
-          setIsLoopPlaying(false);
-      } else {
-          if(loopBuffer && audioCtxRef.current) {
-              const source = audioCtxRef.current.createBufferSource();
-              source.buffer = loopBuffer;
-              source.loop = true;
-              source.connect(masterGainRef.current!);
-              source.start();
-              loopSourceNodeRef.current = source;
-              setIsLoopPlaying(true);
-          }
       }
   };
 
-  // --- Render ---
+  const handlePadDown = (padId: number) => {
+      triggerPad(padId);
+      if (noteRepeat !== 'OFF' && !isLoopMode) {
+          const intervalMs = (60 / bpm) * (noteRepeat === '1/8' ? 0.5 : 0.25) * 1000;
+          if (noteRepeatIntervalRef.current) clearInterval(noteRepeatIntervalRef.current);
+          noteRepeatIntervalRef.current = window.setInterval(() => triggerPad(padId), intervalMs);
+      }
+  };
 
+  const handlePadUp = (padId: number) => {
+      if (noteRepeatIntervalRef.current) {
+          clearInterval(noteRepeatIntervalRef.current);
+          noteRepeatIntervalRef.current = null;
+      }
+  };
+
+  // Keyboard Controls
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.repeat) return;
+          const key = e.key.toUpperCase();
+          const pad = drumPads.find(p => p.keyTrigger === key);
+          if (pad) {
+              handlePadDown(pad.id);
+          }
+      };
+      const handleKeyUp = (e: KeyboardEvent) => {
+          const key = e.key.toUpperCase();
+          const pad = drumPads.find(p => p.keyTrigger === key);
+          if (pad) handlePadUp(pad.id);
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
+      return () => {
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
+      };
+  }, [drumPads, pitchBend, noteRepeat, isLoopMode, bpm]);
+
+  
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4 flex-wrap gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-purple-400">DJ Gemini Drum Machine</h2>
-          <p className="text-gray-400 text-sm">WebAudio Synthesis Engine | 5x4 Matrix</p>
-        </div>
-
-        {/* Controls & Kit Management */}
-        <div className="flex items-center space-x-4 bg-gray-900/50 p-2 rounded-lg flex-wrap gap-y-2">
-          {/* View Toggle */}
-           <div className="flex bg-gray-800 rounded-lg p-1">
-              <button 
-                  onClick={() => setViewMode('PADS')}
-                  className={`p-2 rounded-md transition-colors ${viewMode === 'PADS' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                  title="Pads View"
-              >
-                  <DrumIcon className="h-5 w-5" />
-              </button>
-              <button 
-                  onClick={() => setViewMode('SEQUENCER')}
-                  className={`p-2 rounded-md transition-colors ${viewMode === 'SEQUENCER' ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                  title="Sequencer View"
-              >
-                  <SequencerIcon className="h-5 w-5" />
-              </button>
+      {/* Header / Controls */}
+      <div className="flex flex-wrap items-center justify-between mb-4 gap-4 p-2 bg-gray-700/30 rounded-lg">
+          <div className="flex items-center space-x-4">
+              <h2 className="text-2xl font-bold text-emerald-400 flex items-center">
+                  <DrumIcon className="mr-2" />
+                  Drum Machine
+              </h2>
+              <div className="flex items-center space-x-2 bg-gray-900 rounded-lg p-1">
+                  <button 
+                      onClick={() => setViewMode('PADS')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition ${viewMode === 'PADS' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  >
+                      PADS
+                  </button>
+                  <button 
+                      onClick={() => setViewMode('SEQUENCER')}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition ${viewMode === 'SEQUENCER' ? 'bg-emerald-600 text-white' : 'text-gray-400 hover:text-white'}`}
+                  >
+                      SEQUENCER
+                  </button>
+              </div>
           </div>
 
-          <div className="flex items-center space-x-2 border-r border-gray-700 pr-4">
-              <VolumeIcon volume={volume} />
-              <input 
-                type="range" min="0" max="1" step="0.1" value={volume} 
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-16 sm:w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              />
-          </div>
-
-          {/* Pitch & BPM Performance Controls */}
-          <div className="flex items-center space-x-3 border-r border-gray-700 pr-4">
+          <div className="flex items-center space-x-4">
               <div className="flex flex-col items-center">
-                  <label className="text-[10px] text-gray-400 uppercase font-bold">Tune: {pitchBend > 0 ? `+${pitchBend}` : pitchBend}</label>
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">BPM</label>
                   <input 
-                    type="range" min="-24" max="24" step="1" value={pitchBend} 
-                    onChange={(e) => setPitchBend(Number(e.target.value))}
-                    className="w-16 sm:w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                    title="Pitch Bend (Semitones)"
+                      type="number" 
+                      value={bpm} 
+                      onChange={(e) => setBpm(Number(e.target.value))}
+                      className="w-16 bg-gray-900 border border-gray-600 rounded text-center text-emerald-400 font-mono font-bold focus:ring-1 focus:ring-emerald-500"
                   />
               </div>
+              
               <div className="flex flex-col items-center">
-                   <label className="text-[10px] text-gray-400 uppercase font-bold">BPM</label>
-                   <input 
-                        type="number" 
-                        value={bpm} 
-                        onChange={(e) => setBpm(Number(e.target.value))}
-                        className="w-12 bg-gray-800 text-white text-xs font-mono text-center rounded border border-gray-600 focus:ring-1 focus:ring-purple-500"
-                    />
+                 <label className="text-[10px] text-gray-400 font-bold uppercase">Pitch</label>
+                 <input 
+                    type="range" min="-12" max="12" step="1" 
+                    value={pitchBend} onChange={(e) => setPitchBend(Number(e.target.value))}
+                    className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                 />
+                 <span className="text-[10px] text-emerald-400">{pitchBend > 0 ? '+' : ''}{pitchBend}</span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                  <label className="text-[10px] text-gray-400 font-bold uppercase">Volume</label>
+                  <div className="flex items-center">
+                      <VolumeIcon volume={volume} />
+                      <input 
+                          type="range" min="0" max="1" step="0.01" 
+                          value={volume} onChange={(e) => setVolume(parseFloat(e.target.value))}
+                          className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-emerald-500 ml-2"
+                      />
+                  </div>
               </div>
           </div>
-          
-          <button 
-            onClick={toggleRecord}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg ${isRecording ? 'bg-red-600 animate-pulse ring-4 ring-red-900' : 'bg-gray-700 hover:bg-red-900 text-red-500'}`}
-            title="Record Session"
-          >
-             <div className={`rounded-full ${isRecording ? 'w-3 h-3 bg-white' : 'w-4 h-4 bg-red-500'}`}></div>
-          </button>
-           {isRecording && <span className="font-mono text-red-400 text-sm">{new Date(recordingTime * 1000).toISOString().substr(14, 5)}</span>}
-           
-           {/* Looper Controls */}
-           <div className="flex items-center space-x-2 border-l border-gray-700 pl-4">
+
+          <div className="flex items-center space-x-2">
                <button 
-                 onClick={toggleLoopRecord}
-                 className={`px-2 py-1 text-xs rounded border ${isLoopRecording ? 'bg-orange-600 border-orange-500 text-white' : 'border-orange-800 text-orange-500 hover:bg-orange-900'}`}
+                   onClick={() => setIsLoopMode(!isLoopMode)}
+                   className={`flex flex-col items-center justify-center px-3 py-1 rounded border transition-all ${
+                       isLoopMode 
+                       ? 'bg-yellow-600 border-yellow-500 text-white shadow-[0_0_10px_rgba(202,138,4,0.5)]' 
+                       : 'bg-gray-800 border-gray-600 text-gray-400 hover:text-white'
+                   }`}
+                   title="Loop Mode: Click pads to toggle continuous play"
                >
-                   {isLoopRecording ? 'REC LOOP...' : 'LOOP REC'}
+                   <span className="font-black text-xs">LOOP</span>
+                   <div className={`w-1.5 h-1.5 rounded-full mt-0.5 ${isLoopMode ? 'bg-white' : 'bg-gray-600'}`}></div>
                </button>
-               <button
-                 onClick={toggleLoopPlay}
-                 disabled={!loopBuffer}
-                 className={`px-2 py-1 text-xs rounded border ${isLoopPlaying ? 'bg-green-600 border-green-500 text-white' : 'border-green-800 text-green-500 hover:bg-green-900 disabled:opacity-50'}`}
+               
+               <button 
+                    onClick={isAudioRecording ? stopAudioRecording : startAudioRecording}
+                    className={`flex items-center justify-center px-3 py-1 rounded border font-bold text-xs transition-all ${
+                        isAudioRecording 
+                        ? 'bg-red-600 border-red-500 text-white animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.8)]' 
+                        : 'bg-gray-800 border-gray-600 text-gray-400 hover:text-white hover:border-red-500'
+                    }`}
                >
-                   {isLoopPlaying ? 'STOP LOOP' : 'PLAY LOOP'}
+                   <MicIcon />
+                   <span className="ml-1">{isAudioRecording ? formatRecordingTime(recordingTime) : 'REC AUDIO'}</span>
                </button>
-           </div>
-        </div>
-        
-        {/* Kit Load/Save */}
-        <div className="flex items-center space-x-2">
-            <select 
-              value={selectedKitId} 
-              onChange={(e) => handleLoadKit(e.target.value)}
-              className="bg-gray-700 text-xs text-white rounded p-1 border border-gray-600"
-            >
-                <option value="default">Factory Default</option>
-                {savedKits.map(kit => (
-                    <option key={kit.id} value={kit.id}>{kit.name}</option>
-                ))}
-            </select>
-            <button onClick={() => setIsSaveModalOpen(true)} className="text-gray-400 hover:text-blue-400"><SaveIcon /></button>
-            <button onClick={() => document.getElementById('kit-import')?.click()} className="text-gray-400 hover:text-green-400"><FolderOpenIcon /></button>
-            {selectedKitId !== 'default' && (
-                <button onClick={() => handleDeleteKit(selectedKitId)} className="text-gray-400 hover:text-red-500"><TrashIcon /></button>
-            )}
-        </div>
+
+               <div className="h-6 w-px bg-gray-600 mx-2"></div>
+
+               <select 
+                  value={selectedKitId}
+                  onChange={(e) => handleLoadKit(e.target.value)}
+                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none max-w-[120px]"
+               >
+                  <option value="default">Default Kit</option>
+                  {savedKits.map(kit => (
+                      <option key={kit.id} value={kit.id}>{kit.name}</option>
+                  ))}
+               </select>
+               <button onClick={() => setIsSaveModalOpen(true)} className="p-1.5 text-gray-400 hover:text-emerald-400" title="Save Kit">
+                  <SaveIcon className="w-5 h-5" />
+               </button>
+          </div>
       </div>
 
-      {/* Main Content Area */}
-      {viewMode === 'PADS' ? (
-        <>
-          {/* Pads Grid */}
-          <div className="grid grid-cols-4 gap-2 sm:gap-4 flex-1">
-            {drumPads.map((pad) => (
-              <button
-                key={pad.id}
-                onPointerDown={(e) => {
-                    e.preventDefault(); // Fix double firing on mobile/hybrid
-                    playPad(pad);
-                }}
-                className={`
-                  relative rounded-xl transition-all duration-75 select-none flex flex-col items-center justify-center overflow-hidden touch-manipulation
-                  ${pad.color} 
-                  ${activePadId === pad.id ? 'brightness-150 scale-95 shadow-[0_0_20px_rgba(255,255,255,0.5)]' : 'hover:brightness-110 shadow-lg'}
-                  h-20 sm:h-auto
-                `}
-              >
-                <span className="absolute top-1 left-2 text-xs font-bold opacity-50">{pad.keyTrigger}</span>
-                <span className="font-bold text-sm sm:text-lg text-center leading-tight px-1 z-10 drop-shadow-md">{pad.label}</span>
-                {/* Visual indicator for sound type */}
-                <div className="absolute bottom-0 left-0 w-full h-1 bg-white opacity-20"></div>
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 text-center text-xs text-gray-500">
-            <p>Use Keyboard keys: 1-4, 5-8, Q-R, A-F, Z-V to trigger pads. Row 0 (Top) = Deep 808 Bass.</p>
-          </div>
-        </>
-      ) : (
-        /* Sequencer View */
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-900/50 rounded-xl border border-gray-700">
-             {/* Sequencer Toolbar */}
-             <div className="p-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                    <button 
-                        onClick={() => setIsPlayingSequence(!isPlayingSequence)}
-                        className={`flex items-center px-3 py-1 rounded-md font-bold text-sm ${isPlayingSequence ? 'bg-red-600 text-white' : 'bg-green-600 text-white'}`}
-                    >
-                        {isPlayingSequence ? <StopIcon /> : <PlayIcon />}
-                        <span className="ml-1">{isPlayingSequence ? 'Stop' : 'Play'}</span>
-                    </button>
-                </div>
-                <div className="flex items-center space-x-2">
-                     <button onClick={clearSequencer} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded">Clear</button>
-                     <button onClick={randomizeSequencer} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded">Random</button>
-                     <div className="h-4 w-px bg-gray-600 mx-1"></div>
-                     <button onClick={() => setIsPatternModalOpen(true)} className="text-gray-400 hover:text-blue-400"><SaveIcon /></button>
-                     {savedPatterns.length > 0 && (
-                         <select 
-                            onChange={(e) => {
-                                const pattern = savedPatterns.find(p => p.id === e.target.value);
-                                if(pattern) handleLoadPattern(pattern);
-                                e.target.value = ''; // reset
-                            }}
-                            className="bg-gray-700 text-xs text-white rounded p-1 w-24"
-                         >
-                             <option value="">Load...</option>
-                             {savedPatterns.map(p => (
-                                 <option key={p.id} value={p.id}>{p.name}</option>
-                             ))}
-                         </select>
-                     )}
-                </div>
-             </div>
+      {/* Main View */}
+      <div className="flex-1 overflow-y-auto bg-gray-900 rounded-lg p-4 border border-gray-700 shadow-inner relative">
+          {isLoopMode && (
+              <div className="absolute top-2 right-2 bg-yellow-600/20 border border-yellow-500 text-yellow-500 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider pointer-events-none z-20">
+                  Loop Mode Active
+              </div>
+          )}
 
-             {/* Sequencer Grid */}
-             <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                 {drumPads.map((pad) => (
-                     <div key={pad.id} className="flex items-center h-8">
-                         <div className={`w-24 flex-shrink-0 text-xs font-bold px-2 py-1 rounded-l-md truncate ${pad.color.replace('bg-', 'text-').replace('900', '300')}`}>
-                             {pad.label}
-                         </div>
-                         <div className="flex-1 flex space-x-1 bg-gray-800/50 p-1 rounded-r-md">
-                             {sequencerGrid[pad.id].map((isActive, stepIndex) => (
-                                 <button
-                                    key={stepIndex}
-                                    onClick={() => toggleSequencerStep(pad.id, stepIndex)}
-                                    className={`flex-1 rounded-sm transition-all duration-100 h-full
-                                        ${isActive ? pad.color : 'bg-gray-700'}
-                                        ${currentStep === stepIndex ? 'ring-2 ring-white ring-opacity-50 brightness-125' : ''}
-                                        ${stepIndex % 4 === 0 ? 'mr-1' : ''} 
-                                    `}
-                                 />
-                             ))}
-                         </div>
-                     </div>
-                 ))}
-             </div>
+          {viewMode === 'PADS' ? (
+              <div className="grid grid-cols-4 gap-4 h-full">
+                  {drumPads.map((pad) => (
+                      <button
+                          key={pad.id}
+                          onPointerDown={(e) => {
+                              e.preventDefault(); // Prevent mouse/touch conflicts
+                              handlePadDown(pad.id);
+                          }}
+                          onPointerUp={(e) => {
+                              e.preventDefault();
+                              handlePadUp(pad.id);
+                          }}
+                          onPointerLeave={(e) => {
+                              e.preventDefault();
+                              handlePadUp(pad.id);
+                          }}
+                          onClick={(e) => e.preventDefault()} // Prevent default click behavior causing double triggers
+                          className={`relative rounded-xl shadow-lg transition-all duration-75 border-b-4 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center p-2 group touch-none select-none
+                              ${activePadId === pad.id ? 'border-white ring-4 ring-emerald-400/50 z-10 scale-95' : 'border-black/30'}
+                              ${activeLoops.has(pad.id) ? 'ring-2 ring-yellow-400 bg-blend-overlay brightness-125' : ''}
+                              ${pad.color}
+                          `}
+                      >
+                          <span className="text-2xl font-black text-white/90 drop-shadow-md mb-1 select-none">{pad.keyTrigger}</span>
+                          <span className="text-xs font-medium text-white/70 uppercase tracking-wider select-none text-center leading-tight">{pad.label}</span>
+                          {pad.id >= 16 && <span className="text-[9px] text-white/50 absolute bottom-1">(LOOP)</span>}
+                          
+                          {activeLoops.has(pad.id) && (
+                              <div className="absolute top-2 left-2">
+                                  <div className="w-2 h-2 rounded-full bg-yellow-400 animate-ping"></div>
+                              </div>
+                          )}
+                          <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-white/30 group-hover:bg-white/80"></div>
+                      </button>
+                  ))}
+              </div>
+          ) : (
+              <div className="space-y-2">
+                   {/* Sequencer Controls */}
+                   <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-2 border-b border-gray-700">
+                       <div className="flex space-x-2 items-center">
+                           <button 
+                               onClick={() => setIsPlayingSequence(!isPlayingSequence)}
+                               className={`flex items-center px-4 py-2 rounded font-bold text-white shadow-lg transition ${isPlayingSequence ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                           >
+                               {isPlayingSequence ? <StopIcon className="mr-2" /> : <PlayIcon className="mr-2" />}
+                               {isPlayingSequence ? 'STOP' : 'PLAY'}
+                           </button>
+                           
+                           <button
+                                onClick={() => setIsSequencerRecording(!isSequencerRecording)}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                                    isSequencerRecording 
+                                    ? 'bg-red-600 border-red-400 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.8)]' 
+                                    : 'bg-gray-800 border-gray-600 text-gray-400 hover:border-red-500'
+                                }`}
+                                title="Record Pattern Steps"
+                           >
+                               <div className={`w-4 h-4 rounded-full ${isSequencerRecording ? 'bg-white' : 'bg-red-600'}`}></div>
+                           </button>
+
+                           <button onClick={clearSequencer} className="px-3 py-2 bg-gray-700 text-gray-300 hover:text-white rounded font-bold text-xs">CLEAR</button>
+                           <button onClick={randomizeSequencer} className="px-3 py-2 bg-gray-700 text-gray-300 hover:text-white rounded font-bold text-xs">RANDOM</button>
+                       </div>
+                       <div className="flex space-x-2">
+                            <button onClick={() => setIsPatternModalOpen(true)} className="p-2 bg-gray-700 text-emerald-400 rounded hover:bg-gray-600"><SaveIcon className="w-5 h-5" /></button>
+                            <button onClick={() => document.getElementById('pattern-dropdown')?.classList.toggle('hidden')} className="p-2 bg-gray-700 text-emerald-400 rounded hover:bg-gray-600 relative">
+                                <FolderOpenIcon className="w-5 h-5" />
+                                <div id="pattern-dropdown" className="hidden absolute right-0 top-full mt-2 w-48 bg-gray-800 border border-gray-600 rounded shadow-xl z-20">
+                                    {savedPatterns.length === 0 && <div className="p-2 text-xs text-gray-500">No saved patterns</div>}
+                                    {savedPatterns.map(p => (
+                                        <div key={p.id} className="flex justify-between items-center p-2 hover:bg-gray-700 cursor-pointer border-b border-gray-700 last:border-0">
+                                            <span onClick={() => handleLoadPattern(p)} className="text-xs text-white flex-1">{p.name} ({p.bpm})</span>
+                                            <span onClick={(e) => {e.stopPropagation(); handleDeletePattern(p.id)}} className="text-red-500 hover:text-red-300">×</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </button>
+                       </div>
+                   </div>
+
+                   {/* Grid */}
+                   <div className="overflow-x-auto pb-4">
+                       <div className="min-w-[800px]">
+                           {/* Step Indicators */}
+                           <div className="flex mb-1 ml-24">
+                               {Array.from({ length: 16 }).map((_, i) => (
+                                   <div key={i} className={`flex-1 h-1 mx-0.5 rounded-full transition-colors ${currentStep === i ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-gray-700'}`}></div>
+                               ))}
+                           </div>
+                           
+                           {drumPads.slice(0, 16).map((pad) => (
+                               <div key={pad.id} className="flex items-center mb-1 group hover:bg-gray-800/50 rounded p-1">
+                                   <div className="w-24 flex-shrink-0 flex items-center">
+                                       <div className={`w-3 h-3 rounded-full mr-2 ${pad.color}`}></div>
+                                       <span className="text-xs font-bold text-gray-400 truncate w-16" title={pad.label}>{pad.label}</span>
+                                   </div>
+                                   <div className="flex-1 flex justify-between">
+                                       {Array.from({ length: 16 }).map((_, stepIndex) => (
+                                           <button
+                                               key={stepIndex}
+                                               onClick={() => toggleSequencerStep(pad.id, stepIndex)}
+                                               className={`
+                                                   w-full aspect-square mx-0.5 rounded-sm transition-all duration-100
+                                                   ${sequencerGrid[pad.id][stepIndex] ? pad.color : 'bg-gray-800 hover:bg-gray-700'}
+                                                   ${currentStep === stepIndex ? 'ring-1 ring-white brightness-150' : ''}
+                                               `}
+                                           ></button>
+                                       ))}
+                                   </div>
+                               </div>
+                           ))}
+                       </div>
+                   </div>
+              </div>
+          )}
+      </div>
+      
+      {/* Modals */}
+      {isSaveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl border border-emerald-500/30 w-80">
+                <h3 className="text-lg font-bold text-emerald-400 mb-4">Save Custom Kit</h3>
+                <input 
+                    type="text" 
+                    placeholder="Kit Name" 
+                    value={newKitName}
+                    onChange={(e) => setNewKitName(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white mb-4 focus:border-emerald-500 focus:outline-none"
+                    autoFocus
+                />
+                <div className="flex justify-end space-x-2">
+                    <button onClick={() => setIsSaveModalOpen(false)} className="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                    <button onClick={handleSaveKit} className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-500">Save</button>
+                </div>
+            </div>
         </div>
       )}
 
-      {/* Save Kit Modal */}
-      {isSaveModalOpen && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-              <div className="bg-gray-800 p-6 rounded-lg shadow-2xl border border-gray-600 w-80">
-                  <h3 className="text-xl font-bold text-white mb-4">Save Custom Kit</h3>
-                  <input 
-                    type="text" 
-                    placeholder="Kit Name (e.g. My Trap Kit)"
-                    value={newKitName}
-                    onChange={(e) => setNewKitName(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white mb-4 focus:ring-2 focus:ring-purple-500"
-                    autoFocus
-                  />
-                  <div className="flex justify-end space-x-2">
-                      <button onClick={() => setIsSaveModalOpen(false)} className="px-4 py-2 text-gray-300 hover:text-white">Cancel</button>
-                      <button onClick={handleSaveKit} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">Save</button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* Save Pattern Modal */}
       {isPatternModalOpen && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-              <div className="bg-gray-800 p-6 rounded-lg shadow-2xl border border-gray-600 w-80">
-                  <h3 className="text-xl font-bold text-white mb-4">Save Pattern</h3>
-                  <input 
-                    type="text" 
-                    placeholder="Pattern Name (e.g. Hard Beat 1)"
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl border border-emerald-500/30 w-80">
+                <h3 className="text-lg font-bold text-emerald-400 mb-4">Save Pattern</h3>
+                <input 
+                    type="text"
+                    placeholder="Pattern Name" 
                     value={patternName}
                     onChange={(e) => setPatternName(e.target.value)}
-                    className="w-full bg-gray-700 border border-gray-600 rounded p-2 text-white mb-4 focus:ring-2 focus:ring-purple-500"
+                    className="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white mb-4 focus:border-emerald-500 focus:outline-none"
                     autoFocus
-                  />
-                  <div className="flex justify-end space-x-2">
-                      <button onClick={() => setIsPatternModalOpen(false)} className="px-4 py-2 text-gray-300 hover:text-white">Cancel</button>
-                      <button onClick={handleSavePattern} className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold">Save</button>
-                  </div>
-              </div>
-          </div>
+                />
+                <div className="flex justify-end space-x-2">
+                    <button onClick={() => setIsPatternModalOpen(false)} className="px-4 py-2 text-gray-400 hover:text-white">Cancel</button>
+                    <button onClick={handleSavePattern} className="px-4 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-500">Save</button>
+                </div>
+            </div>
+        </div>
       )}
-
     </div>
   );
 };
