@@ -35,8 +35,11 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const [volume, setVolume] = useState(0.8);
   const [viewMode, setViewMode] = useState<'PADS' | 'SEQUENCER'>('PADS');
 
-  // Sequencer State
+  // Performance Controls
   const [bpm, setBpm] = useState(140);
+  const [pitchBend, setPitchBend] = useState(0); // Semitones -24 to +24
+
+  // Sequencer State
   const [isPlayingSequence, setIsPlayingSequence] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [sequencerGrid, setSequencerGrid] = useState<Record<number, boolean[]>>(() => {
@@ -273,29 +276,32 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
   // --- Sound Generation Helpers ---
 
-  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'piano' | 'bell' | 'string' | 'pluck' | 'flute' | 'guitar' | 'brass' | 'cowbell', destination: AudioNode) => {
+  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'piano' | 'bell' | 'string' | 'pluck' | 'flute' | 'guitar' | 'brass' | 'cowbell', destination: AudioNode, detuneSteps: number = 0) => {
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator(); // For detuning/layering
     const gain = ctx.createGain();
     
+    // Apply pitch bend (detuneSteps is in semitones)
+    const tunedFreq = freq * Math.pow(2, detuneSteps / 12);
+
     gain.connect(destination);
 
     if (type === 'piano') {
         osc1.type = 'sine';
         osc2.type = 'triangle';
-        osc1.frequency.setValueAtTime(freq, time);
-        osc2.frequency.setValueAtTime(freq, time);
+        osc1.frequency.setValueAtTime(tunedFreq, time);
+        osc2.frequency.setValueAtTime(tunedFreq, time);
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(0.6, time + 0.01);
         gain.gain.exponentialRampToValueAtTime(0.01, time + duration);
     } else if (type === 'pluck') {
         // Clean pluck for melody
         osc1.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(freq, time);
+        osc1.frequency.setValueAtTime(tunedFreq, time);
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(freq * 2, time);
-        filter.frequency.exponentialRampToValueAtTime(freq, time + 0.1);
+        filter.frequency.setValueAtTime(tunedFreq * 2, time);
+        filter.frequency.exponentialRampToValueAtTime(tunedFreq, time + 0.1);
         
         osc1.connect(filter);
         filter.connect(gain);
@@ -309,16 +315,16 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     } else if (type === 'bell') {
         osc1.type = 'sine';
         osc2.type = 'sine';
-        osc1.frequency.setValueAtTime(freq, time);
-        osc2.frequency.setValueAtTime(freq * 3.5, time); // Overtone
+        osc1.frequency.setValueAtTime(tunedFreq, time);
+        osc2.frequency.setValueAtTime(tunedFreq * 3.5, time); // Overtone
         gain.gain.setValueAtTime(0, time);
         gain.gain.linearRampToValueAtTime(0.4, time + 0.005);
         gain.gain.exponentialRampToValueAtTime(0.01, time + duration * 1.5);
     } else if (type === 'string') {
         osc1.type = 'sawtooth';
         osc2.type = 'sawtooth';
-        osc1.frequency.setValueAtTime(freq, time);
-        osc2.frequency.setValueAtTime(freq * 1.005, time); // Detune
+        osc1.frequency.setValueAtTime(tunedFreq, time);
+        osc2.frequency.setValueAtTime(tunedFreq * 1.005, time); // Detune
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(500, time);
@@ -337,13 +343,13 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     } else if (type === 'brass') {
          osc1.type = 'sawtooth';
          osc2.type = 'sawtooth';
-         osc1.frequency.setValueAtTime(freq, time);
-         osc2.frequency.setValueAtTime(freq * 1.01, time);
+         osc1.frequency.setValueAtTime(tunedFreq, time);
+         osc2.frequency.setValueAtTime(tunedFreq * 1.01, time);
          const filter = ctx.createBiquadFilter();
          filter.type = 'lowpass';
-         filter.frequency.setValueAtTime(freq * 1, time);
-         filter.frequency.linearRampToValueAtTime(freq * 5, time + 0.05); // Brass swell
-         filter.frequency.exponentialRampToValueAtTime(freq * 1, time + duration);
+         filter.frequency.setValueAtTime(tunedFreq * 1, time);
+         filter.frequency.linearRampToValueAtTime(tunedFreq * 5, time + 0.05); // Brass swell
+         filter.frequency.exponentialRampToValueAtTime(tunedFreq * 1, time + duration);
          osc1.connect(filter);
          osc2.connect(filter);
          filter.connect(gain);
@@ -357,10 +363,10 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
          return;
     } else if (type === 'cowbell') {
          osc1.type = 'square';
-         osc1.frequency.setValueAtTime(freq, time);
+         osc1.frequency.setValueAtTime(tunedFreq, time);
          const filter = ctx.createBiquadFilter();
          filter.type = 'bandpass';
-         filter.frequency.value = 2000;
+         filter.frequency.value = 2000 * Math.pow(2, detuneSteps / 12);
          osc1.connect(filter);
          filter.connect(gain);
          gain.gain.setValueAtTime(0.6, time);
@@ -384,11 +390,14 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       const ctx = audioCtxRef.current;
       const compressor = compressorRef.current;
       if(!ctx || !compressor) return;
+      
+      // Apply Global Pitch Shift to hardcoded FX
+      const pitchMult = Math.pow(2, pitchBend / 12);
 
       if (type === 'kick') {
           const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(150, time);
-          osc.frequency.exponentialRampToValueAtTime(40, time + 0.1);
+          osc.frequency.setValueAtTime(150 * pitchMult, time);
+          osc.frequency.exponentialRampToValueAtTime(40 * pitchMult, time + 0.1);
           const g = ctx.createGain();
           g.gain.setValueAtTime(1, time);
           g.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
@@ -400,7 +409,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
           const filter = ctx.createBiquadFilter();
           filter.type = 'highpass';
-          filter.frequency.value = 1000;
+          filter.frequency.value = 1000 * pitchMult;
           const g = ctx.createGain();
           g.gain.setValueAtTime(0.7, time);
           g.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
@@ -410,8 +419,8 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           
           // Add body to snare
           const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(200, time);
-          osc.frequency.exponentialRampToValueAtTime(150, time + 0.1);
+          osc.frequency.setValueAtTime(200 * pitchMult, time);
+          osc.frequency.exponentialRampToValueAtTime(150 * pitchMult, time + 0.1);
           const og = ctx.createGain();
           og.gain.setValueAtTime(0.5, time);
           og.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
@@ -422,10 +431,10 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       } else if (type === 'hihat') {
           const osc = ctx.createOscillator();
           osc.type = 'square';
-          osc.frequency.value = 8000;
+          osc.frequency.value = 8000 * pitchMult;
           const filter = ctx.createBiquadFilter();
           filter.type = 'highpass';
-          filter.frequency.value = 7000;
+          filter.frequency.value = 7000 * pitchMult;
           const g = ctx.createGain();
           g.gain.setValueAtTime(0.3, time);
           g.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
@@ -437,7 +446,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
            noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
            const filter = ctx.createBiquadFilter();
            filter.type = 'highpass';
-           filter.frequency.value = 3000;
+           filter.frequency.value = 3000 * pitchMult;
            const g = ctx.createGain();
            g.gain.setValueAtTime(0.4, time);
            g.gain.exponentialRampToValueAtTime(0.01, time + 1.5);
@@ -447,8 +456,8 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       } else if (type === 'gunshot') {
           // Composite Gunshot: Low Thud + Noise Burst
           const osc = ctx.createOscillator();
-          osc.frequency.setValueAtTime(80, time);
-          osc.frequency.exponentialRampToValueAtTime(20, time + 0.4);
+          osc.frequency.setValueAtTime(80 * pitchMult, time);
+          osc.frequency.exponentialRampToValueAtTime(20 * pitchMult, time + 0.4);
           const g = ctx.createGain();
           g.gain.setValueAtTime(1, time);
           g.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
@@ -457,7 +466,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
           const nf = ctx.createBiquadFilter();
           nf.type = 'lowpass';
-          nf.frequency.value = 1200;
+          nf.frequency.value = 1200 * pitchMult;
           const ng = ctx.createGain();
           ng.gain.setValueAtTime(1, time);
           ng.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
@@ -472,9 +481,9 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       } else if (type === 'siren') {
          const osc = ctx.createOscillator();
          osc.type = 'sawtooth';
-         osc.frequency.setValueAtTime(800, time);
-         osc.frequency.linearRampToValueAtTime(1200, time + 0.5);
-         osc.frequency.linearRampToValueAtTime(800, time + 1.0);
+         osc.frequency.setValueAtTime(800 * pitchMult, time);
+         osc.frequency.linearRampToValueAtTime(1200 * pitchMult, time + 0.5);
+         osc.frequency.linearRampToValueAtTime(800 * pitchMult, time + 1.0);
          const g = ctx.createGain();
          g.gain.setValueAtTime(0.5, time);
          g.gain.exponentialRampToValueAtTime(0.01, time + 1.2);
@@ -494,14 +503,14 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     const now = ctx.currentTime;
     const beat = 60 / bpm; 
 
-    // Purple Row (8-11): Play Melodic Scale
+    // Purple Row (8-11): Play Melodic Scale (Affected by Pitch Bend)
     if (padId >= 8 && padId <= 11) {
-        playSynthNote(ctx, config.baseFrequency, now, 0.5, 'pluck', compressor);
+        playSynthNote(ctx, config.baseFrequency, now, 0.5, 'pluck', compressor, pitchBend);
         return;
     }
 
-    // Row 4: Generated Beat Loops (Keys Z-V) - Now 4 Bars Long (16 beats)
-    if (padId === 16) { // Chopper Speed (Tech N9ne Style - Triplets, Fast)
+    // Row 4: Generated Beat Loops (Keys Z-V) - Melodies affected by pitchBend
+    if (padId === 16) { // Chopper Speed (Tech N9ne Style)
         for(let bar = 0; bar < 4; bar++) {
             const barStart = now + (bar * 4 * beat);
             // Kick: 1, 1.66(trip), 2.33(trip), 3.5
@@ -514,20 +523,17 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
             triggerSound('snare', barStart + beat);
             triggerSound('snare', barStart + beat * 3);
 
-            // Hats: Triplets constant
+            // Hats
             for(let i=0; i<12; i++) {
-                 // Skip hat on snare hits for cleaner mix
-                 if (i !== 3 && i !== 9) {
-                    triggerSound('hihat', barStart + i * (beat/3), 0, 0.05);
-                 }
+                 if (i !== 3 && i !== 9) triggerSound('hihat', barStart + i * (beat/3), 0, 0.05);
             }
             
-            // Brass hit on 1 of bar 1 and 3
+            // Brass hit (Pitch Bend applied)
             if (bar % 2 === 0) {
-                playSynthNote(ctx, 146.83, barStart, 0.5, 'brass', compressor); // D3
-                playSynthNote(ctx, 73.42, barStart, 0.5, 'brass', compressor); // D2 (Octave)
+                playSynthNote(ctx, 146.83, barStart, 0.5, 'brass', compressor, pitchBend); // D3
+                playSynthNote(ctx, 73.42, barStart, 0.5, 'brass', compressor, pitchBend); // D2
             }
-            // Fills on Bar 4
+            // Fills
             if (bar === 3) {
                 triggerSound('snare', barStart + beat * 3.25);
                 triggerSound('snare', barStart + beat * 3.5);
@@ -536,57 +542,52 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
             }
         }
         
-    } else if (padId === 17) { // Shady Dirge (Eminem Style - Dark Piano, Minor)
+    } else if (padId === 17) { // Shady Dirge (Eminem Style)
         // Chromatic Walkdown D -> C# -> C -> B
-        const notes = [293.66, 277.18, 261.63, 246.94]; // D4, C#4, C4, B3
+        const notes = [293.66, 277.18, 261.63, 246.94]; 
         
         for(let bar = 0; bar < 4; bar++) {
             const barStart = now + (bar * 4 * beat);
             
-            // Drums: Boom Bap-ish but faster
+            // Drums
             triggerSound('kick', barStart);
             triggerSound('kick', barStart + beat * 1.5);
             triggerSound('kick', barStart + beat * 2.5);
             triggerSound('snare', barStart + beat);
             triggerSound('snare', barStart + beat * 3);
             
-            // Hats: 8ths
-            for(let i=0; i<8; i++) {
-                triggerSound('hihat', barStart + i * (beat/2));
-            }
+            // Hats
+            for(let i=0; i<8; i++) triggerSound('hihat', barStart + i * (beat/2));
 
-            // Piano Melody (Quarter notes)
+            // Piano Melody (Pitch Bend applied)
             const note = notes[bar % 4];
-            playSynthNote(ctx, note, barStart, 0.4, 'piano', compressor);
-            playSynthNote(ctx, note, barStart + beat, 0.4, 'piano', compressor);
-            playSynthNote(ctx, note, barStart + beat * 2, 0.4, 'piano', compressor);
-            playSynthNote(ctx, note, barStart + beat * 3, 0.4, 'piano', compressor);
+            playSynthNote(ctx, note, barStart, 0.4, 'piano', compressor, pitchBend);
+            playSynthNote(ctx, note, barStart + beat, 0.4, 'piano', compressor, pitchBend);
+            playSynthNote(ctx, note, barStart + beat * 2, 0.4, 'piano', compressor, pitchBend);
+            playSynthNote(ctx, note, barStart + beat * 3, 0.4, 'piano', compressor, pitchBend);
             
-            // Bell accent on 1
-            playSynthNote(ctx, note * 2, barStart, 0.8, 'bell', compressor);
+            // Bell accent
+            playSynthNote(ctx, note * 2, barStart, 0.8, 'bell', compressor, pitchBend);
         }
         
     } else if (padId === 18) { // Detroit Rock (Heavy Stomp)
         for(let bar = 0; bar < 4; bar++) {
              const barStart = now + (bar * 4 * beat);
              
-             // Heavy Stomp Kick on 1, 3
              triggerSound('kick', barStart);
              triggerSound('kick', barStart + beat * 2);
-             
-             // Clap/Snare layer on 2, 4
              triggerSound('snare', barStart + beat);
              triggerSound('snare', barStart + beat * 3);
              
-             // Guitar Riff (Power Chords simulation)
+             // Guitar Riff (Pitch Bend applied)
              if (bar % 2 === 0) {
-                 playSynthNote(ctx, 146.83, barStart, 0.2, 'guitar', compressor); // D
-                 playSynthNote(ctx, 146.83, barStart + beat * 0.5, 0.2, 'guitar', compressor);
-                 playSynthNote(ctx, 174.61, barStart + beat * 1.5, 0.3, 'guitar', compressor); // F
+                 playSynthNote(ctx, 146.83, barStart, 0.2, 'guitar', compressor, pitchBend);
+                 playSynthNote(ctx, 146.83, barStart + beat * 0.5, 0.2, 'guitar', compressor, pitchBend);
+                 playSynthNote(ctx, 174.61, barStart + beat * 1.5, 0.3, 'guitar', compressor, pitchBend);
              } else {
-                 playSynthNote(ctx, 130.81, barStart, 0.2, 'guitar', compressor); // C
-                 playSynthNote(ctx, 130.81, barStart + beat * 0.5, 0.2, 'guitar', compressor);
-                 playSynthNote(ctx, 123.47, barStart + beat * 1.5, 0.3, 'guitar', compressor); // B
+                 playSynthNote(ctx, 130.81, barStart, 0.2, 'guitar', compressor, pitchBend);
+                 playSynthNote(ctx, 130.81, barStart + beat * 0.5, 0.2, 'guitar', compressor, pitchBend);
+                 playSynthNote(ctx, 123.47, barStart + beat * 1.5, 0.3, 'guitar', compressor, pitchBend);
              }
         }
 
@@ -594,53 +595,48 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
          for(let bar = 0; bar < 4; bar++) {
             const barStart = now + (bar * 4 * beat);
             
-            // Trap Drums
             triggerSound('kick', barStart);
-            triggerSound('kick', barStart + beat * 2.5); // Syncopated 
+            triggerSound('kick', barStart + beat * 2.5); 
             triggerSound('snare', barStart + beat * 2);
             
-            // Fast Hat Rolls (32nd notes occasionally)
-            for(let i=0; i<16; i++) {
-                triggerSound('hihat', barStart + i * (beat/4));
-            }
+            for(let i=0; i<16; i++) triggerSound('hihat', barStart + i * (beat/4));
             
-            // Choir / Strings swells
+            // Strings (Pitch Bend applied)
             if (bar === 0 || bar === 2) {
-                playSynthNote(ctx, 293.66, barStart, 2.0, 'string', compressor); // D Minor chord root
-                playSynthNote(ctx, 349.23, barStart, 2.0, 'string', compressor); // F
+                playSynthNote(ctx, 293.66, barStart, 2.0, 'string', compressor, pitchBend); 
+                playSynthNote(ctx, 349.23, barStart, 2.0, 'string', compressor, pitchBend); 
             } else {
-                 playSynthNote(ctx, 277.18, barStart, 2.0, 'string', compressor); // C# (Harmonic minor tension)
-                 playSynthNote(ctx, 329.63, barStart, 2.0, 'string', compressor); // E
+                 playSynthNote(ctx, 277.18, barStart, 2.0, 'string', compressor, pitchBend); 
+                 playSynthNote(ctx, 329.63, barStart, 2.0, 'string', compressor, pitchBend); 
             }
             
-            // Chant/Voice FX simulation
+            // Chant
             if (bar === 3) {
-                playSynthNote(ctx, 440, barStart + beat * 3, 0.1, 'cowbell', compressor); // "Hey"
-                playSynthNote(ctx, 440, barStart + beat * 3.5, 0.1, 'cowbell', compressor); // "Hey"
+                playSynthNote(ctx, 440, barStart + beat * 3, 0.1, 'cowbell', compressor, pitchBend);
+                playSynthNote(ctx, 440, barStart + beat * 3.5, 0.1, 'cowbell', compressor, pitchBend);
             }
          }
     }
-    // Fallbacks for Row 3 (FX) if handled here or via soundType check
+    // Fallbacks
     else if (padId >= 12 && padId <= 14) {
-        if(config.soundType === 'fx' && padId === 12) { // Gun Cock
+        if(config.soundType === 'fx' && padId === 12) {
+             // Gun Cock
              const noise = ctx.createBufferSource();
              noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
              const f = ctx.createBiquadFilter();
              f.type = 'bandpass';
-             f.frequency.value = 2500;
+             f.frequency.value = 2500 * Math.pow(2, pitchBend / 12);
              const g = ctx.createGain();
-             // Click 1
              g.gain.setValueAtTime(0.5, now);
              g.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
-             // Click 2
              g.gain.setValueAtTime(0.6, now + 0.15);
              g.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
              noise.connect(f).connect(g).connect(compressor);
              noise.start(now);
              noise.stop(now + 0.3);
-        } else if (config.soundType === 'fx' && padId === 13) { // Gun Blast
+        } else if (config.soundType === 'fx' && padId === 13) { 
             triggerSound('gunshot', now);
-        } else if (config.soundType === 'fx' && padId === 14) { // Siren
+        } else if (config.soundType === 'fx' && padId === 14) {
             triggerSound('siren', now);
         }
     }
@@ -658,7 +654,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
     if (!ctx || !master || !compressor || !reverb) return;
 
-    // Specific sequencer logic for Rows 2, 3, 4
     if ((pad.id >= 8 && pad.id <= 11) || (pad.id >= 16) || (pad.id >= 12 && pad.id <= 14)) {
         playSpecialSound(pad.id, pad);
         return;
@@ -672,31 +667,30 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
     osc.type = pad.waveform;
     
-    // Deep Bass Logic (Row 0)
+    // Apply Pitch Bend to ALL standard synth pads (Bass, Kicks, Snares if synthesized)
+    const pitchMult = Math.pow(2, pitchBend / 12);
+    const tunedBaseFreq = pad.baseFrequency * pitchMult;
+
     if (pad.soundType === 'bass') {
-        // Clean start to avoid popping
         gain.gain.setValueAtTime(0, t);
         gain.gain.linearRampToValueAtTime(1.0, t + 0.02);
         
-        // Pitch Envelope for "Kick" effect on 808
-        osc.frequency.setValueAtTime(pad.baseFrequency + 120, t); 
-        osc.frequency.exponentialRampToValueAtTime(pad.baseFrequency, t + pad.pitchDecay);
+        osc.frequency.setValueAtTime(tunedBaseFreq + 120, t); 
+        osc.frequency.exponentialRampToValueAtTime(tunedBaseFreq, t + pad.pitchDecay);
         
-        // Sustain
         gain.gain.exponentialRampToValueAtTime(0.8, t + 0.1);
         gain.gain.exponentialRampToValueAtTime(0.001, t + pad.volumeDecay);
     } else {
-        // Standard drum hits
-        osc.frequency.setValueAtTime(pad.baseFrequency, t);
+        osc.frequency.setValueAtTime(tunedBaseFreq, t);
         if (pad.pitchDecay > 0) {
-             osc.frequency.exponentialRampToValueAtTime(pad.baseFrequency / 2, t + pad.pitchDecay);
+             osc.frequency.exponentialRampToValueAtTime(tunedBaseFreq / 2, t + pad.pitchDecay);
         }
         gain.gain.setValueAtTime(1.0, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + pad.volumeDecay);
     }
 
     if (pad.distortion) {
-      distortion.curve = makeDistortionCurve(pad.soundType === 'bass' ? 20 : 100); // Less distortion on bass to keep it deep
+      distortion.curve = makeDistortionCurve(pad.soundType === 'bass' ? 20 : 100); 
       distortion.oversample = '4x';
       osc.connect(distortion);
       distortion.connect(gain);
@@ -704,7 +698,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       osc.connect(gain);
     }
     
-    // Noise layer for snares/hats
     if (pad.noise) {
         const noise = ctx.createBufferSource();
         noise.buffer = noiseBufferRef.current || createNoiseBuffer(ctx);
@@ -713,12 +706,12 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         
         if(pad.soundType === 'hihat') {
             noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 5000;
+            noiseFilter.frequency.value = 5000 * pitchMult;
             noiseGain.gain.setValueAtTime(0.4, t);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
         } else if (pad.soundType === 'snare') {
             noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 800;
+            noiseFilter.frequency.value = 800 * pitchMult;
             noiseGain.gain.setValueAtTime(0.6, t);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
         }
@@ -730,27 +723,23 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
     gain.connect(compressor); 
     
-    // Reverb Send
     const reverbSend = ctx.createGain();
-    reverbSend.gain.value = pad.soundType === 'bass' ? 0.05 : 0.3; // Less reverb on bass
+    reverbSend.gain.value = pad.soundType === 'bass' ? 0.05 : 0.3; 
     gain.connect(reverbSend);
     reverbSend.connect(reverb);
 
     osc.start(t);
     osc.stop(t + pad.volumeDecay);
 
-  }, [drumPads, volume]);
+  }, [drumPads, volume, pitchBend, bpm]); // Added bpm to dependencies
 
   // Sequencer Player Clock
   useEffect(() => {
       if (isPlayingSequence) {
-          // Calculate step time in ms (16th notes)
           const stepTime = (60000 / bpm) / 4;
-          
           sequencerIntervalRef.current = window.setInterval(() => {
               setCurrentStep(prev => {
                   const nextStep = (prev + 1) % 16;
-                  // Trigger sounds for next step
                   drumPads.forEach(pad => {
                       if (sequencerGrid[pad.id][nextStep]) {
                           playPad(pad);
@@ -777,7 +766,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   // Keyboard Mapping with Repeat Fix
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return; // Prevent double firing on hold
+      if (e.repeat) return;
       const key = e.key.toUpperCase();
       const pad = drumPads.find(p => p.keyTrigger === key);
       if (pad) {
@@ -845,7 +834,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
             if(audioCtxRef.current) {
                 const buffer = await audioCtxRef.current.decodeAudioData(arrayBuffer);
                 setLoopBuffer(buffer);
-                setIsLoopPlaying(true); // Auto-play after record
+                setIsLoopPlaying(true);
             }
         };
         recorder.start();
@@ -885,7 +874,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         </div>
 
         {/* Controls & Kit Management */}
-        <div className="flex items-center space-x-4 bg-gray-900/50 p-2 rounded-lg">
+        <div className="flex items-center space-x-4 bg-gray-900/50 p-2 rounded-lg flex-wrap gap-y-2">
           {/* View Toggle */}
            <div className="flex bg-gray-800 rounded-lg p-1">
               <button 
@@ -909,8 +898,30 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
               <input 
                 type="range" min="0" max="1" step="0.1" value={volume} 
                 onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                className="w-16 sm:w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-purple-500"
               />
+          </div>
+
+          {/* Pitch & BPM Performance Controls */}
+          <div className="flex items-center space-x-3 border-r border-gray-700 pr-4">
+              <div className="flex flex-col items-center">
+                  <label className="text-[10px] text-gray-400 uppercase font-bold">Tune: {pitchBend > 0 ? `+${pitchBend}` : pitchBend}</label>
+                  <input 
+                    type="range" min="-24" max="24" step="1" value={pitchBend} 
+                    onChange={(e) => setPitchBend(Number(e.target.value))}
+                    className="w-16 sm:w-20 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                    title="Pitch Bend (Semitones)"
+                  />
+              </div>
+              <div className="flex flex-col items-center">
+                   <label className="text-[10px] text-gray-400 uppercase font-bold">BPM</label>
+                   <input 
+                        type="number" 
+                        value={bpm} 
+                        onChange={(e) => setBpm(Number(e.target.value))}
+                        className="w-12 bg-gray-800 text-white text-xs font-mono text-center rounded border border-gray-600 focus:ring-1 focus:ring-purple-500"
+                    />
+              </div>
           </div>
           
           <button 
@@ -920,7 +931,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           >
              <div className={`rounded-full ${isRecording ? 'w-3 h-3 bg-white' : 'w-4 h-4 bg-red-500'}`}></div>
           </button>
-           {isRecording && <span className="font-mono text-red-400">{new Date(recordingTime * 1000).toISOString().substr(14, 5)}</span>}
+           {isRecording && <span className="font-mono text-red-400 text-sm">{new Date(recordingTime * 1000).toISOString().substr(14, 5)}</span>}
            
            {/* Looper Controls */}
            <div className="flex items-center space-x-2 border-l border-gray-700 pl-4">
@@ -1003,15 +1014,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                         {isPlayingSequence ? <StopIcon /> : <PlayIcon />}
                         <span className="ml-1">{isPlayingSequence ? 'Stop' : 'Play'}</span>
                     </button>
-                    <div className="flex items-center bg-gray-700 rounded px-2">
-                        <span className="text-xs text-gray-400 mr-2">BPM</span>
-                        <input 
-                            type="number" 
-                            value={bpm} 
-                            onChange={(e) => setBpm(Number(e.target.value))}
-                            className="w-12 bg-transparent text-white text-sm font-mono focus:outline-none"
-                        />
-                    </div>
                 </div>
                 <div className="flex items-center space-x-2">
                      <button onClick={clearSequencer} className="px-2 py-1 bg-gray-700 hover:bg-gray-600 text-xs text-white rounded">Clear</button>
