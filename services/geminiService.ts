@@ -1,5 +1,6 @@
 
 
+
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';

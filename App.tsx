@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
@@ -11,6 +13,7 @@ import SpotifyConnect from './components/SpotifyConnect';
 import Storage from './components/Storage';
 import DrumMachine from './components/DrumMachine';
 import YouTubeConnect from './components/YouTubeConnect';
+import CodeLab from './components/CodeLab';
 import { getAllTracksFromDB } from './services/storageService';
 
 // Hardcore Rap / Sub-Woofer Configuration (5x4 Grid)
@@ -68,6 +71,10 @@ const App: React.FC = () => {
   const [reverbMix, setReverbMix] = useState(0.2);
   const [reverbDecay, setReverbDecay] = useState(1.5);
   
+  // Code Lab State
+  const [codeLabContent, setCodeLabContent] = useState<string>('// Welcome to the Code Lab! \n// Use the musicSDK to create sounds.\n// Example: const synth = musicSDK.createSynth();\n//          synth.playNote("C4", 0, 0.5);\n');
+  const [runCodeLabTrigger, setRunCodeLabTrigger] = useState(0);
+
   // Navigation Props (for passing data between views, e.g. YouTube -> Studio)
   const [navProps, setNavProps] = useState<any>(null);
 
@@ -89,11 +96,22 @@ const App: React.FC = () => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
+    // Load CodeLab content from localStorage
+    const savedCode = localStorage.getItem('villain_code_lab_content');
+    if (savedCode) {
+        setCodeLabContent(savedCode);
+    }
+
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+  
+  // Save CodeLab content to localStorage
+  useEffect(() => {
+      localStorage.setItem('villain_code_lab_content', codeLabContent);
+  }, [codeLabContent]);
 
   const appController: AppController = {
     currentView,
@@ -111,6 +129,8 @@ const App: React.FC = () => {
     drumPads,
     reverbMix,
     reverbDecay,
+    codeLabContent,
+    runCodeLabTrigger,
     setCurrentView,
     setActiveModel,
     setClonedVoices,
@@ -125,6 +145,8 @@ const App: React.FC = () => {
     setDrumPads,
     setReverbMix,
     setReverbDecay,
+    setCodeLabContent,
+    setRunCodeLabTrigger,
     navProps,
     setNavProps,
   };
@@ -156,6 +178,8 @@ const App: React.FC = () => {
         />;
       case AppView.Chat:
         return <Chat appController={appController} />;
+      case AppView.CodeLab:
+        return <CodeLab appController={appController} />;
       case AppView.ModelManager:
         return (
           <ModelManager

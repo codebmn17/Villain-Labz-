@@ -9,6 +9,7 @@ export enum AppView {
   Storage = 'STORAGE',
   DrumMachine = 'DRUM_MACHINE',
   YouTube = 'YOUTUBE',
+  CodeLab = 'CODE_LAB',
 }
 
 export enum StudioMode {
@@ -111,6 +112,8 @@ export interface AppController {
   drumPads: DrumPadConfig[];
   reverbMix: number;
   reverbDecay: number;
+  codeLabContent: string;
+  runCodeLabTrigger: number;
   // Setters
   setCurrentView: (view: AppView) => void;
   setActiveModel: (model: AiModel) => void;
@@ -126,6 +129,8 @@ export interface AppController {
   setDrumPads: (pads: DrumPadConfig[]) => void;
   setReverbMix: (mix: number) => void;
   setReverbDecay: (decay: number) => void;
+  setCodeLabContent: (content: string) => void;
+  setRunCodeLabTrigger: (updater: (prev: number) => number) => void;
   // Navigation Props (Optional for data passing)
   navProps?: any;
   setNavProps?: (props: any) => void;
