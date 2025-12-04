@@ -107,6 +107,7 @@ export interface AppController {
   customModel: File | null;
   customModelName: string;
   isDjActive: boolean;
+  isAiVoiceEnabled: boolean;
   generatedTracks: AudioPlaylistItem[];
   isOnline: boolean;
   drumPads: DrumPadConfig[];
@@ -125,6 +126,7 @@ export interface AppController {
   setCustomModel: (file: File | null) => void;
   setCustomModelName: (name: string) => void;
   setIsDjActive: (isActive: boolean) => void;
+  setIsAiVoiceEnabled: (enabled: boolean) => void;
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
   setDrumPads: (pads: DrumPadConfig[]) => void;
   setReverbMix: (mix: number) => void;

@@ -65,6 +65,7 @@ const App: React.FC = () => {
   const [customModel, setCustomModel] = useState<File | null>(null);
   const [customModelName, setCustomModelName] = useState<string>('Custom AI');
   const [isDjActive, setIsDjActive] = useState<boolean>(false);
+  const [isAiVoiceEnabled, setIsAiVoiceEnabled] = useState<boolean>(true);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
   const [drumPads, setDrumPads] = useState<DrumPadConfig[]>(DEFAULT_PADS);
@@ -72,7 +73,12 @@ const App: React.FC = () => {
   const [reverbDecay, setReverbDecay] = useState(1.5);
   
   // Code Lab State
-  const [codeLabContent, setCodeLabContent] = useState<string>('// Welcome to the Code Lab! \n// Use the musicSDK to create sounds.\n// Example: const synth = musicSDK.createSynth();\n//          synth.playNote("C4", 0, 0.5);\n');
+  const [codeLabContent, setCodeLabContent] = useState<string>(`// Welcome to the Polyglot Code Lab!
+// Use musicSDK.runCode(language, code) to generate audio.
+// Supported languages: 'alda', 'sonic-pi', 'tidalcycles', 'supercollider' (simulated)
+// Example:
+musicSDK.runCode('alda', 'piano: c d e f g a b > c');
+`);
   const [runCodeLabTrigger, setRunCodeLabTrigger] = useState(0);
 
   // Navigation Props (for passing data between views, e.g. YouTube -> Studio)
@@ -124,6 +130,7 @@ const App: React.FC = () => {
     customModel,
     customModelName,
     isDjActive,
+    isAiVoiceEnabled,
     generatedTracks,
     isOnline,
     drumPads,
@@ -141,6 +148,7 @@ const App: React.FC = () => {
     setCustomModel,
     setCustomModelName,
     setIsDjActive,
+    setIsAiVoiceEnabled,
     setGeneratedTracks,
     setDrumPads,
     setReverbMix,

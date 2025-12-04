@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis } from '../services/geminiService';
@@ -7,6 +6,8 @@ import { Content, FunctionResponse, Part, FunctionCall } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
 import AudioPlayer from './AudioPlayer';
 import { saveTrackToDB, deleteTrackFromDB } from '../services/storageService';
+import { SpeakerOnIcon } from './icons/SpeakerOnIcon';
+import { SpeakerOffIcon } from './icons/SpeakerOffIcon';
 
 interface ChatProps {
   appController: AppController;
@@ -54,7 +55,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { activeModel, customModelName } = appController;
+  const { activeModel, customModelName, isAiVoiceEnabled, setIsAiVoiceEnabled } = appController;
 
   const aiName = activeModel === 'gemini' ? 'DJ Gemini' 
                : activeModel === 'openai' ? 'DJ OpenAI'
@@ -88,7 +89,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     const files = event.target.files;
     if (!files) return;
 
-    const newAttachments: ChatAttachment[] = Array.from(files).map(file => ({
+    // FIX: Explicitly type 'file' as File to resolve type inference issue.
+    const newAttachments: ChatAttachment[] = Array.from(files).map((file: File) => ({
         name: file.name,
         mimeType: file.type,
         isUploading: true,
@@ -303,6 +305,25 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       setChatHistory(prev => [...prev, aiMessage]);
       setAiHistory(result.newHistory);
 
+      // Grand Finale: Speak the response
+      if (isAiVoiceEnabled && aiResponseText) {
+          try {
+              if (appController.elevenLabsKey) {
+                  // Use high-quality ElevenLabs voice if available
+                  const voiceId = appController.clonedVoices.length > 0 ? appController.clonedVoices[0].id : undefined;
+                  const audioUrl = await elevenLabsGenerate(aiResponseText, appController.elevenLabsKey, voiceId);
+                  const audio = new Audio(audioUrl);
+                  audio.play();
+              } else {
+                  // Fallback to built-in TTS
+                  const audioData = await generateSpeech(aiResponseText);
+                  if (audioData) await playEncodedAudio(audioData);
+              }
+          } catch (speechError) {
+              console.error("Failed to generate or play speech:", speechError);
+          }
+      }
+
     } catch (e) {
       console.error(e);
       const errorMessage: ChatMessage = { sender: 'ai', text: `An error occurred: ${e instanceof Error ? e.message : String(e)}` };
@@ -314,9 +335,18 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   return (
     <div className="flex flex-col h-full bg-gray-800 rounded-xl shadow-2xl animate-fade-in">
-      <div className="p-4 border-b border-gray-700">
-        <h2 className="text-xl font-bold text-purple-400">{aiName}</h2>
-        <p className="text-xs text-gray-400">Your creative AI partner. Type a message or attach a file.</p>
+      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
+        <div>
+            <h2 className="text-xl font-bold text-purple-400">{aiName}</h2>
+            <p className="text-xs text-gray-400">Your creative AI partner. Type a message or attach a file.</p>
+        </div>
+        <button
+            onClick={() => setIsAiVoiceEnabled(!isAiVoiceEnabled)}
+            className="p-2 rounded-full hover:bg-gray-700 transition-colors"
+            title={isAiVoiceEnabled ? "Disable AI Voice" : "Enable AI Voice"}
+        >
+            {isAiVoiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {chatHistory.map((msg, index) => (
@@ -378,5 +408,5 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     </div>
   );
 };
-
+// FIX: Add default export for Chat component
 export default Chat;
