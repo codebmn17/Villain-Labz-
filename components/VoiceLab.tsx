@@ -105,8 +105,8 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.size > 100 * 1024 * 1024) {
-          setError('File is too large. Maximum size is 100MB.');
+      if (file.size > 369 * 1024 * 1024) {
+          setError('File is too large. Maximum size is 369MB.');
           return;
       }
 
@@ -246,7 +246,7 @@ const VoiceLab: React.FC<VoiceLabProps> = ({ setClonedVoices, clonedVoices, elev
                 <div className="border border-dashed border-gray-600 rounded-lg p-2 text-center flex flex-col items-center justify-center hover:border-purple-500 transition-colors relative bg-gray-800/50 h-24">
                     <UploadIcon className="h-6 w-6 text-gray-500" />
                     <p className="mt-0.5 text-gray-300 font-medium text-[10px]">Upload Audio Sample</p>
-                    <p className="text-[8px] text-gray-500 mt-0.5">WAV, MP3 (Max 100MB)</p>
+                    <p className="text-[8px] text-gray-500 mt-0.5">WAV, MP3 (Max 369MB)</p>
                     <input 
                         type="file" 
                         accept="audio/*"
