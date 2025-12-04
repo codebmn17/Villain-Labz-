@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const [claudeKey, setClaudeKey] = useState<string>('');
   const [ninjaKey, setNinjaKey] = useState<string>('');
   const [customModel, setCustomModel] = useState<File | null>(null);
+  const [customModelName, setCustomModelName] = useState<string>('Custom AI');
   const [isDjActive, setIsDjActive] = useState<boolean>(false);
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
@@ -103,6 +104,7 @@ const App: React.FC = () => {
     claudeKey,
     ninjaKey,
     customModel,
+    customModelName,
     isDjActive,
     generatedTracks,
     isOnline,
@@ -117,6 +119,7 @@ const App: React.FC = () => {
     setClaudeKey,
     setNinjaKey,
     setCustomModel,
+    setCustomModelName,
     setIsDjActive,
     setGeneratedTracks,
     setDrumPads,
@@ -168,6 +171,8 @@ const App: React.FC = () => {
             setNinjaKey={setNinjaKey}
             customModel={customModel}
             setCustomModel={setCustomModel}
+            customModelName={customModelName}
+            setCustomModelName={setCustomModelName}
             isDjActive={isDjActive}
           />
         );

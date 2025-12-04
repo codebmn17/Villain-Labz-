@@ -16,7 +16,7 @@ export enum StudioMode {
   Cover = 'COVER',
 }
 
-export type AiModel = 'gemini' | 'openai' | 'claude' | 'ninja';
+export type AiModel = 'gemini' | 'openai' | 'claude' | 'ninja' | 'custom';
 
 export interface ClonedVoice {
   id: string;
@@ -104,6 +104,7 @@ export interface AppController {
   claudeKey: string;
   ninjaKey: string;
   customModel: File | null;
+  customModelName: string;
   isDjActive: boolean;
   generatedTracks: AudioPlaylistItem[];
   isOnline: boolean;
@@ -119,6 +120,7 @@ export interface AppController {
   setClaudeKey: (key: string) => void;
   setNinjaKey: (key: string) => void;
   setCustomModel: (file: File | null) => void;
+  setCustomModelName: (name: string) => void;
   setIsDjActive: (isActive: boolean) => void;
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
   setDrumPads: (pads: DrumPadConfig[]) => void;

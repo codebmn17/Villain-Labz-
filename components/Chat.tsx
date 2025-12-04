@@ -46,14 +46,20 @@ async function playEncodedAudio(base64String: string) {
     }
 }
 
-const getModelDisplayName = (model: AiModel) => {
+const getModelDisplayName = (model: AiModel, customName: string, isDjActive: boolean) => {
+    let name: string;
     switch (model) {
-        case 'openai': return 'OpenAI Assistant';
-        case 'claude': return 'Claude';
-        case 'ninja': return 'Ninja AI';
+        case 'openai': name = 'DJ OpenAI'; break;
+        case 'claude': name = 'DJ Claude'; break;
+        case 'ninja': name = 'DJ Ninja'; break;
+        case 'custom': name = `DJ ${customName}`; break;
         case 'gemini': 
-        default: return 'DJ Gemini';
+        default: name = 'DJ Gemini';
     }
+    if (model === 'gemini' && isDjActive) {
+        return 'DJ Gemini (Sovereign Mode)';
+    }
+    return name;
 };
 
 const getModelVersionName = (model: AiModel) => {
@@ -61,6 +67,7 @@ const getModelVersionName = (model: AiModel) => {
         case 'openai': return 'GPT-4o';
         case 'claude': return 'CLAUDE 3.5 SONNET';
         case 'ninja': return 'STEALTH v2';
+        case 'custom': return 'User Provided';
         case 'gemini': 
         default: return 'GEMINI 2.5 FLASH';
     }
@@ -71,6 +78,7 @@ const getModelColor = (model: AiModel) => {
         case 'openai': return 'text-green-400';
         case 'claude': return 'text-orange-400';
         case 'ninja': return 'text-red-400';
+        case 'custom': return 'text-cyan-400';
         case 'gemini': 
         default: return 'text-purple-400';
     }
@@ -577,12 +585,14 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     }
   };
 
+  const modelDisplayName = getModelDisplayName(appController.activeModel, appController.customModelName, appController.isDjActive);
+
   return (
     <div className="bg-gray-800 p-4 rounded-xl shadow-2xl animate-fade-in h-[85vh] flex flex-col">
       <div className="flex items-center justify-between mb-4">
          <div>
              <h2 className={`text-3xl font-bold ${getModelColor(appController.activeModel)}`}>
-                {getModelDisplayName(appController.activeModel)} {appController.isDjActive && appController.activeModel === 'gemini' && '(Sovereign Mode)'}
+                {modelDisplayName}
              </h2>
              <div className="text-xs text-gray-500 font-mono">{getModelVersionName(appController.activeModel)}</div>
          </div>
@@ -677,7 +687,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSend()}
-            placeholder={`Ask ${getModelDisplayName(appController.activeModel)}...`}
+            placeholder={`Ask ${modelDisplayName.split(' (')[0]}...`}
             className="flex-1 bg-gray-700 border border-gray-600 border-l-0 p-2 text-gray-100 focus:ring-0 focus:outline-none h-[42px] transition"
             disabled={isLoading}
             />

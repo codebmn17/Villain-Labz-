@@ -1,4 +1,5 @@
 
+
 import React, { useState } from 'react';
 import { UploadIcon } from './icons/UploadIcon';
 import { AgentIcon } from './icons/AgentIcon';
@@ -20,6 +21,8 @@ interface ModelManagerProps {
   setNinjaKey: (key: string) => void;
   customModel: File | null;
   setCustomModel: (file: File | null) => void;
+  customModelName: string;
+  setCustomModelName: (name: string) => void;
   isDjActive: boolean;
 }
 
@@ -36,6 +39,8 @@ const ModelManager: React.FC<ModelManagerProps> = ({
   setNinjaKey,
   customModel, 
   setCustomModel,
+  customModelName,
+  setCustomModelName,
   isDjActive,
 }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -62,7 +67,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({
       {/* Active Model Selector */}
       <div className="p-4 bg-gray-700/50 rounded-lg border border-purple-500/30">
         <h3 className="text-xl font-semibold text-white mb-4">Active Intelligence Model</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
             
             <button 
                 onClick={() => setActiveModel('gemini')}
@@ -101,6 +106,16 @@ const ModelManager: React.FC<ModelManagerProps> = ({
                 <NinjaIcon className={`h-8 w-8 mb-2 ${activeModel === 'ninja' ? 'text-red-400' : 'text-gray-500'}`} />
                 <span className={`font-bold ${activeModel === 'ninja' ? 'text-red-300' : 'text-gray-400'}`}>Ninja v2</span>
                 <span className="text-[10px] text-gray-500">Stealth</span>
+            </button>
+
+            <button 
+                onClick={() => setActiveModel('custom')}
+                disabled={!customModel}
+                className={`flex flex-col items-center justify-center p-4 rounded-lg border-2 transition-all ${activeModel === 'custom' ? 'border-cyan-500 bg-cyan-900/20' : 'border-gray-600 bg-gray-800 hover:bg-gray-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+                <AgentIcon className={`h-8 w-8 mb-2 ${activeModel === 'custom' ? 'text-cyan-400' : 'text-gray-500'}`} />
+                <span className={`font-bold truncate w-full ${activeModel === 'custom' ? 'text-cyan-300' : 'text-gray-400'}`}>{customModelName}</span>
+                <span className="text-[10px] text-gray-500">Custom</span>
             </button>
         </div>
       </div>
@@ -208,6 +223,20 @@ const ModelManager: React.FC<ModelManagerProps> = ({
             disabled={isUploading}
           />
         </div>
+
+        {customModel && (
+          <div className="mt-4 animate-fade-in">
+              <label htmlFor="custom-model-name" className="block text-sm font-medium text-gray-300 mb-2">Custom Model Name</label>
+              <input
+                  id="custom-model-name"
+                  type="text"
+                  value={customModelName}
+                  onChange={(e) => setCustomModelName(e.target.value)}
+                  className="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-100 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 transition"
+                  placeholder="Name your custom model"
+              />
+          </div>
+        )}
       </div>
     </div>
   );
