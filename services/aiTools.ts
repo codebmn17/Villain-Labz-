@@ -222,12 +222,11 @@ export const aiTools: FunctionDeclaration[] = [
     // TTS
     {
         name: 'speak',
-        description: "Synthesizes speech from text using a high-quality AI voice. Use this to talk to the user, announce events, or just be 'Villain'.",
+        description: "Synthesizes speech from text using DJ's designated high-quality AI voice. Use this to talk to the user or make announcements.",
         parameters: {
             type: Type.OBJECT,
             properties: {
-                text: { type: Type.STRING, description: "The text to speak." },
-                voiceName: { type: Type.STRING, enum: ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'], description: "The voice persona to use. Defaults to 'Fenrir' (deep male voice)." }
+                text: { type: Type.STRING, description: "The text to speak." }
             },
             required: ['text']
         }

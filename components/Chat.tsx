@@ -185,12 +185,30 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                         case 'setNinjaApiKey': setNinjaKey(args.apiKey as string); toolResult = { success: true }; break;
                         case 'setDjMode': setIsDjActive(args.isActive as boolean); toolResult = { success: true, status: args.isActive ? 'activated' : 'deactivated' }; break;
                         case 'speak': {
-                            const audioBase64 = await generateSpeech(args.text as string, args.voiceName as string);
-                            if (audioBase64) {
-                                playEncodedAudio(audioBase64);
-                                toolResult = { success: true, message: "Speech synthesized and played." };
+                             if (appController.elevenLabsKey) {
+                                try {
+                                    const audioUrl = await elevenLabsGenerate(args.text as string, appController.elevenLabsKey, 'OQlPYXZeVu4JfhxehPYh');
+                                    const audio = new Audio(audioUrl);
+                                    audio.play();
+                                    toolResult = { success: true, message: "Speech synthesized and played via ElevenLabs." };
+                                } catch (e) {
+                                    console.error("ElevenLabs speech tool failed, falling back.", e);
+                                    const audioBase64 = await generateSpeech(args.text as string);
+                                    if (audioBase64) {
+                                        playEncodedAudio(audioBase64);
+                                        toolResult = { success: true, message: "Speech synthesized and played via fallback." };
+                                    } else {
+                                        toolResult = { error: "Failed to synthesize speech." };
+                                    }
+                                }
                             } else {
-                                toolResult = { error: "Failed to synthesize speech." };
+                                const audioBase64 = await generateSpeech(args.text as string);
+                                if (audioBase64) {
+                                    playEncodedAudio(audioBase64);
+                                    toolResult = { success: true, message: "Speech synthesized and played." };
+                                } else {
+                                    toolResult = { error: "Failed to synthesize speech." };
+                                }
                             }
                             break;
                         }

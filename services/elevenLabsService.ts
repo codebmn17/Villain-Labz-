@@ -5,7 +5,7 @@ const silentAudioBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0Y
 
 const API_BASE = "https://api.elevenlabs.io/v1";
 
-export const elevenLabsGenerate = async (text: string, apiKey: string, voiceId: string = "pNInz6obpgDQGcFmaJgB"): Promise<string> => {
+export const elevenLabsGenerate = async (text: string, apiKey: string, voiceId: string = "OQlPYXZeVu4JfhxehPYh"): Promise<string> => {
     if (!apiKey) {
         // Fallback Mock behavior if no key provided
         return new Promise((resolve) => {
