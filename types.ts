@@ -115,6 +115,8 @@ export interface AppController {
   reverbDecay: number;
   codeLabContent: string;
   runCodeLabTrigger: number;
+  bpm: number;
+  sequencerGrid: Record<number, boolean[]>;
   // Setters
   setCurrentView: (view: AppView) => void;
   setActiveModel: (model: AiModel) => void;
@@ -133,6 +135,8 @@ export interface AppController {
   setReverbDecay: (decay: number) => void;
   setCodeLabContent: (content: string) => void;
   setRunCodeLabTrigger: (updater: (prev: number) => number) => void;
+  setBpm: (bpm: number) => void;
+  setSequencerGrid: (grid: Record<number, boolean[]>) => void;
   // Navigation Props (Optional for data passing)
   navProps?: any;
   setNavProps?: (props: any) => void;

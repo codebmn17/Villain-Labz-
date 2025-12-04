@@ -1,4 +1,3 @@
-
 import { ClonedVoice } from '../types';
 
 // A base64 encoded silent WAV file to use as a fallback/mock.
@@ -6,7 +5,7 @@ const silentAudioBase64 = "UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0Y
 
 const API_BASE = "https://api.elevenlabs.io/v1";
 
-export const elevenLabsGenerate = async (text: string, apiKey: string, voiceId: string = "21m00Tcm4TlvDq8ikWAM"): Promise<string> => {
+export const elevenLabsGenerate = async (text: string, apiKey: string, voiceId: string = "pNInz6obpgDQGcFmaJgB"): Promise<string> => {
     if (!apiKey) {
         // Fallback Mock behavior if no key provided
         return new Promise((resolve) => {

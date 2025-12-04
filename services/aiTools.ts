@@ -1,6 +1,3 @@
-
-
-
 import { FunctionDeclaration, Type } from "@google/genai";
 import { AppView } from "../types";
 
@@ -230,7 +227,7 @@ export const aiTools: FunctionDeclaration[] = [
             type: Type.OBJECT,
             properties: {
                 text: { type: Type.STRING, description: "The text to speak." },
-                voiceName: { type: Type.STRING, enum: ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'], description: "The voice persona to use. Defaults to 'Puck' (Villain's default)." }
+                voiceName: { type: Type.STRING, enum: ['Kore', 'Puck', 'Charon', 'Fenrir', 'Zephyr'], description: "The voice persona to use. Defaults to 'Fenrir' (deep male voice)." }
             },
             required: ['text']
         }
@@ -242,7 +239,7 @@ export const aiTools: FunctionDeclaration[] = [
         parameters: {
             type: Type.OBJECT,
             properties: {
-                padId: { type: Type.NUMBER, description: 'The ID of the pad to configure (0-15).' },
+                padId: { type: Type.NUMBER, description: 'The ID of the pad to configure (0-19).' },
                 label: { type: Type.STRING, description: 'A short label for the pad (e.g., "Kick", "Snare", "Laser").' },
                 soundType: { type: Type.STRING, enum: ['kick', 'snare', 'hihat', 'bass', 'fx', 'synth'], description: 'The type of sound to synthesize.' },
                 baseFrequency: { type: Type.NUMBER, description: 'The base frequency in Hz.' },
@@ -266,5 +263,33 @@ export const aiTools: FunctionDeclaration[] = [
                 reverbDecay: { type: Type.NUMBER, description: 'The decay time of the reverb in seconds. How long the "tail" is. A good value is 2.5.' }
             }
         }
+    },
+    {
+        name: 'generateSequencerPattern',
+        description: 'Generates a 16-step drum pattern in the sequencer based on a descriptive prompt (e.g., "a classic hip-hop beat"). Also suggests an appropriate BPM.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                prompt: { type: Type.STRING, description: 'A description of the desired beat, including genre, feel, or artist style.' }
+            },
+            required: ['prompt']
+        }
+    },
+    // Code Lab Tools
+    {
+        name: 'updateCodeLab',
+        description: 'Updates the content of the Code Lab editor with new code. Use this to write or modify audio synthesis code.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                code: { type: Type.STRING, description: 'The new JavaScript code to place in the editor.' }
+            },
+            required: ['code']
+        }
+    },
+    {
+        name: 'runCodeLab',
+        description: 'Executes the current code in the Code Lab editor, allowing the AI to "hear" its creations.',
+        parameters: { type: Type.OBJECT, properties: {} }
     }
 ];

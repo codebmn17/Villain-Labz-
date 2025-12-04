@@ -1,9 +1,4 @@
 
-
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
@@ -74,6 +69,16 @@ const App: React.FC = () => {
   const [reverbMix, setReverbMix] = useState(0.2);
   const [reverbDecay, setReverbDecay] = useState(1.5);
   
+  // Sequencer state (lifted for AI control)
+  const [bpm, setBpm] = useState(60);
+  const [sequencerGrid, setSequencerGrid] = useState<Record<number, boolean[]>>(() => {
+    const grid: Record<number, boolean[]> = {};
+    for (let i = 0; i < 20; i++) {
+        grid[i] = new Array(16).fill(false);
+    }
+    return grid;
+  });
+
   // Code Lab State
   const [codeLabContent, setCodeLabContent] = useState<string>(`// Welcome to the Polyglot Code Lab!
 // Use musicSDK.runCode(language, code) to generate audio.
@@ -140,6 +145,8 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
     reverbDecay,
     codeLabContent,
     runCodeLabTrigger,
+    bpm,
+    sequencerGrid,
     setCurrentView,
     setActiveModel,
     setClonedVoices,
@@ -157,6 +164,8 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
     setReverbDecay,
     setCodeLabContent,
     setRunCodeLabTrigger,
+    setBpm,
+    setSequencerGrid,
     navProps,
     setNavProps,
   };
@@ -185,6 +194,10 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
           reverbDecay={reverbDecay}
           setReverbMix={setReverbMix}
           setReverbDecay={setReverbDecay}
+          bpm={bpm}
+          setBpm={setBpm}
+          sequencerGrid={sequencerGrid}
+          setSequencerGrid={setSequencerGrid}
         />;
       case AppView.Chat:
         return <Chat appController={appController} />;

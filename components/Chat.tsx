@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis, generateSequencerPatternFromPrompt } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part, FunctionCall } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -19,6 +19,10 @@ const MAX_BASE64_SIZE = 20 * 1024 * 1024; // 20MB limit for inline base64
 
 // Helper to decode Gemini's PCM audio
 async function playEncodedAudio(base64String: string) {
+    if (!base64String || typeof base64String !== 'string' || base64String.length < 100) {
+        console.warn("Invalid or empty audio data received from AI, skipping playback.");
+        return;
+    }
     try {
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
         
@@ -89,7 +93,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     const files = event.target.files;
     if (!files) return;
 
-    // FIX: Explicitly type 'file' as File to resolve type inference issue.
     const newAttachments: ChatAttachment[] = Array.from(files).map((file: File) => ({
         name: file.name,
         mimeType: file.type,
@@ -279,6 +282,14 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                         responsePayload = { success: true };
                         break;
                     }
+                    case 'generateSequencerPattern': {
+                        const { grid, bpm } = await generateSequencerPatternFromPrompt(call.args.prompt as string, appController.drumPads);
+                        appController.setSequencerGrid(grid);
+                        appController.setBpm(bpm);
+                        appController.setCurrentView(AppView.DrumMachine);
+                        responsePayload = { success: true, message: `Generated a pattern and set BPM to ${bpm}. Navigating to Drum Machine.` };
+                        break;
+                    }
                 }
             } catch (e: any) {
                 responsePayload = { error: e.message };
@@ -408,5 +419,4 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     </div>
   );
 };
-// FIX: Add default export for Chat component
 export default Chat;

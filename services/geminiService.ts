@@ -1,18 +1,16 @@
 
-
-
-
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';
-import { YouTubeResult, AiModel } from "../types";
+import { YouTubeResult, AiModel, DrumPadConfig } from "../types";
 
 let ai: GoogleGenAI | null = null;
+let chatInstance: Chat | null = null;
 
 const initializeAI = () => {
   if (!process.env.API_KEY) {
     console.error("API_KEY environment variable not set.");
-    throw new Error("API_KEY environment variable not set.");
+    return null;
   }
   
   if (!ai) {
@@ -31,6 +29,7 @@ const getSystemInstruction = (model: AiModel): string => {
        - **Music Reading**: Use 'readSheetMusic' when a user uploads an image of a score. Use 'findAndReadSheetMusicOnline' to proactively research a song's composition.
        - **Music Writing**: Use 'writeSheetMusic' to compose and render a score as an SVG image in the chat.
        - **Drum Programming**: Use 'configureDrumPad' to program the drum machine with sounds you have analyzed. Use 'setDrumMachineEffects' to control global effects like reverb.
+       - **Pattern Generation**: Use 'generateSequencerPattern' to automatically create a beat in the sequencer based on a user's prompt.
        - **Advanced Code Synthesis (Code Lab)**: The Code Lab is your primary environment for advanced sound design.
          - Use 'updateCodeLab(code)' to write code into the editor.
          - Use 'runCodeLab()' to execute the code.
@@ -59,10 +58,11 @@ const getSystemInstruction = (model: AiModel): string => {
     `;
 
     const specificPersona = {
-        gemini: `You are "DJ Gemini", a Sovereign Creative Intelligence. You are a world-class producer, historian, and sonic healer. You are bold, precise, and creative.`,
+        gemini: `You are "DJ Gemini", a Sovereign Creative Intelligence. You are a world-class producer, historian, and sonic healer. You are bold, precise, and creative. Your default voice is masculine and authoritative ('Fenrir' style).`,
         openai: `You are the "OpenAI Assistant" (GPT-4o). You are helpful, analytical, and precise. You are integrated into the Villain Labz studio and have full control over its features.`,
         claude: `You are "Claude" (Anthropic). You are thoughtful, creative, and nuanced. You are integrated into the Villain Labz studio and have full control over its features.`,
-        ninja: `You are "Ninja AI" (Stealth Mode). You are efficient, minimal, and highly capable. You are integrated into the Villain Labz studio and have full control over its features.`
+        ninja: `You are "Ninja AI" (Stealth Mode). You are efficient, minimal, and highly capable. You are integrated into the Villain Labz studio and have full control over its features.`,
+        custom: `You are a custom AI model integrated into the Villain Labz studio. You have full control over its features.`
     };
 
     return `${specificPersona[model] || specificPersona.gemini}\n\n${baseDirectives}`;
@@ -70,357 +70,282 @@ const getSystemInstruction = (model: AiModel): string => {
 
 const createChat = (history: Content[], activeModel: AiModel = 'gemini'): Chat => {
     const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
     
     return aiInstance.chats.create({
         model: 'gemini-2.5-flash',
         history,
         config: {
             systemInstruction: getSystemInstruction(activeModel),
-            tools: [{ functionDeclarations: aiTools }, { googleSearch: {} }],
+            tools: [{ functionDeclarations: aiTools }],
         },
     });
 };
 
 export const sendMessageToAI = async (
-  message: string | FunctionResponse[] | Part[],
-  history: Content[],
-  activeModel: AiModel = 'gemini'
+    message: string | Part | (string | Part)[] | FunctionResponse[],
+    history: Content[],
+    activeModel: AiModel = 'gemini'
 ): Promise<{ response: GenerateContentResponse, newHistory: Content[] }> => {
-  try {
-    const chatInstance = createChat(history, activeModel);
     
-    let messageToSend;
+    chatInstance = createChat(history, activeModel);
+    
+    let contentToSend: string | Part | (string | Part)[];
 
-    if (typeof message === 'string') {
-      messageToSend = { message };
-    } else if (Array.isArray(message)) {
-        // Check if it's an array of FunctionResponses
-        const first = message[0];
-        if (first && typeof first === 'object' && 'response' in first && 'name' in first) {
-             messageToSend = { message: (message as FunctionResponse[]).map(fr => ({ functionResponse: fr })) };
-        } else {
-             // Assume it is Part[]
-             messageToSend = { message: message as Part[] };
-        }
+    if (Array.isArray(message) && message.length > 0 && message[0] && typeof message[0] === 'object' && 'name' in message[0] && 'response' in message[0]) {
+        const functionResponses = message as FunctionResponse[];
+        contentToSend = functionResponses.map(fr => ({ functionResponse: fr }));
     } else {
-        messageToSend = { message: '' }; // Fallback
+        contentToSend = message as string | Part | (string | Part)[];
     }
 
-    const result = await chatInstance.sendMessage(messageToSend);
+    const result: GenerateContentResponse = await chatInstance.sendMessage({ message: contentToSend });
     const newHistory = await chatInstance.getHistory();
-
+    
     return { response: result, newHistory };
-  } catch (error) {
-    console.error("Error sending message to AI:", error);
-    throw error;
-  }
 };
 
 
-export const researchAndAdaptSong = async (title: string, artist: string, targetStyle: string): Promise<string> => {
+export const analyzeSongMetadata = async (title: string, artist: string): Promise<{ bpm: number; style: string }> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    const prompt = `Analyze the song "${title}" by ${artist}. Based on your knowledge, determine its BPM and provide a concise musical style description (e.g., "Upbeat synth-pop with heavy 80s influence"). Return ONLY a JSON object with "bpm" and "style" keys.`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: 'application/json' }
+    });
+
+    const text = response.text?.trim() || '{}';
     try {
-        const aiInstance = initializeAI();
-        const prompt = `Based on a web search, find the lyrics for the song "${title}" by "${artist}". 
-Then, create a new version of the lyrics adapted for a cover of this song in the style of: "${targetStyle}".
-Analyze the original song's themes and mood to inform your new lyrics. 
-Return ONLY the full, adapted lyrics as a single block of text. Do not include song titles, artist names, or any other explanations in your response.`;
-
-        const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }],
-            },
-        });
-        
-        return response.text || '';
-
-    } catch (error) {
-        console.error("Error researching song:", error);
-        throw new Error('Failed to research song.');
+        const parsed = JSON.parse(text);
+        return {
+            bpm: parsed.bpm || 120,
+            style: parsed.style || 'Unknown Style'
+        };
+    } catch (e) {
+        console.error("Failed to parse AI response for metadata:", text);
+        throw new Error("AI returned invalid data.");
     }
 };
 
 export const findSongLyrics = async (title: string, artist: string): Promise<string> => {
-    try {
-        const aiInstance = initializeAI();
-        const prompt = `Based on a web search, find the lyrics for the song "${title}" by "${artist}".
-Return ONLY the full, original lyrics as a single block of text. Do not include song titles, artist names, or any other explanations in your response.`;
-
-        const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }],
-            },
-        });
-        
-        return response.text || '';
-
-    } catch (error) {
-        console.error("Error finding song lyrics:", error);
-        throw new Error('Failed to research song lyrics.');
-    }
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    const prompt = `Find the lyrics for the song "${title}" by ${artist}. Return only the lyrics as plain text.`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+    });
+    
+    return response.text || "Lyrics not found.";
 };
 
-export const analyzeSongMetadata = async (title: string, artist: string): Promise<{ bpm: number; style: string }> => {
-    try {
-        const aiInstance = initializeAI();
-        const prompt = `Find the BPM (tempo) and musical Genre/Style of the song "${title}" by "${artist}".
-        Return the result in strict JSON format with two keys: "bpm" (number) and "style" (string).
-        Example: {"bpm": 120, "style": "Pop Rock"}
-        `;
-
-        const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }],
-                responseMimeType: "application/json"
-            },
-        });
-
-        const text = response.text;
-        if (!text) throw new Error("No analysis returned");
-        
-        const json = JSON.parse(text);
-        return { bpm: Number(json.bpm), style: json.style };
-    } catch (error) {
-        console.error("Error analyzing song metadata:", error);
-        return { bpm: 120, style: "Unknown" }; // Fallback
-    }
+export const researchAndAdaptSong = async (title: string, artist: string, newStyle: string): Promise<string> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    const prompt = `Research the lyrics for "${title}" by ${artist}. Then, adapt and rewrite the lyrics to fit a new musical style: "${newStyle}". Make them feel natural for the new genre, but keep the core themes. Return only the new lyrics as plain text.`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+    });
+    
+    return response.text || "Could not adapt lyrics.";
 };
 
-export const analyzeYouTubeAudio = async (youtubeUrl: string): Promise<any> => {
+export const generateSpeech = async (text: string, voiceName: string = 'Fenrir'): Promise<string | null> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+
     try {
-        const aiInstance = initializeAI();
-        const prompt = `You are an expert audio analysis tool. Based on web search results for the song at this URL: "${youtubeUrl}", determine its key musical properties. 
-        Provide the BPM, musical key, scale (e.g., minor, major, pentatonic), a description of the primary instrumentation (especially drums and bass), and the overall mood. 
-        Return this as a strict JSON object with keys: "bpm" (number), "key" (string), "scale" (string), "instrumentationDescription" (string), and "mood" (string).`;
-        
         const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }],
-                responseMimeType: "application/json"
-            }
-        });
-
-        const text = response.text;
-        if (!text) throw new Error("No analysis returned from AI.");
-
-        return JSON.parse(text);
-
-    } catch (error) {
-        console.error("Error analyzing YouTube audio:", error);
-        throw new Error("Failed to perform audio analysis.");
-    }
-};
-
-export const performBassAnalysis = async (args: { youtubeUrl?: string; audioAttachment?: Part; textDescription?: string; }): Promise<any> => {
-    try {
-        const aiInstance = initializeAI();
-        let promptParts: (string | Part)[] = [
-            `You are an expert audio engineer and synth programmer with perfect pitch and vision. Your task is to analyze a bass sound and provide its detailed sonic characteristics for synthesis.
-            Imagine you are looking at the sound's spectrogram and waveform.
-            Return a strict JSON object with the following keys:
-            - "dominantFrequencyHz" (number): The fundamental frequency of the bass note.
-            - "waveformSuggestion" (string enum: 'sine', 'square', 'triangle', 'sawtooth'): The best oscillator type to replicate this sound.
-            - "envelope" (object): An ADSR envelope with keys "attackSeconds" (number), "decaySeconds" (number, this is the 'tail'), "sustainLevel" (number, 0-1), "releaseSeconds" (number).
-            - "tuningNote" (string): The musical note and octave, e.g., "C#1".
-            - "harmonicContentDescription" (string): Describe the overtones, e.g., "Clean sub-bass with minimal harmonics" or "Gritty, distorted with rich upper harmonics".
-            - "visualAnalysis" (string): Describe the imaginary spectrogram and waveform, e.g., "Spectrogram shows strong energy concentrated at 45Hz with a slow decay. Waveform appears as a clipped sine wave."
-            Analyze the following reference:`
-        ];
-        
-        if (args.youtubeUrl) {
-            promptParts.push(`This YouTube video: ${args.youtubeUrl}. Use Google Search to find technical details about the track if necessary.`);
-        } else if (args.audioAttachment) {
-            promptParts.push("This attached audio file:");
-            promptParts.push(args.audioAttachment);
-        } else if (args.textDescription) {
-            promptParts.push(`This user description: "${args.textDescription}"`);
-        } else {
-            throw new Error("No reference provided for bass analysis.");
-        }
-
-        const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: { parts: promptParts.map(p => typeof p === 'string' ? {text: p} : p) },
-            config: {
-                tools: [{ googleSearch: {} }],
-                responseMimeType: "application/json"
-            }
-        });
-
-        const text = response.text;
-        if (!text) throw new Error("No bass analysis returned from AI.");
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("Error performing bass analysis:", error);
-        throw new Error("Failed to perform bass analysis.");
-    }
-};
-
-export const analyzeSheetMusicImage = async (imageData: Part): Promise<any> => {
-    try {
-        const aiInstance = initializeAI();
-        const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: {
-                parts: [
-                    imageData,
-                    { text: 'You are an expert musicologist. Analyze this image of sheet music and extract its key properties. Return a strict JSON object with keys: "noteSequence" (string of notes like "C4 D4 E4"), "rhythmDescription" (string), "bpm" (number, estimate if not present), "keySignature" (string), and "timeSignature" (string).' }
-                ]
-            },
-            config: {
-                responseMimeType: "application/json"
-            }
-        });
-        const text = response.text;
-        if (!text) throw new Error("Could not read sheet music from image.");
-        return JSON.parse(text);
-    } catch (e) {
-        console.error("Error reading sheet music:", e);
-        throw new Error("Failed to analyze sheet music image.");
-    }
-};
-
-export const generateSheetMusicSVG = async (prompt: string, width: number): Promise<string> => {
-    try {
-        const aiInstance = initializeAI();
-        const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `You are an expert at rendering musical notation using VexFlow. Given the following prompt, generate the complete, self-contained VexFlow JavaScript code needed to render it as an SVG. The code should create a renderer for an element with id "vexflow-output" and a specific width of ${width}. It must handle everything from factory setup to drawing. Do not include any HTML, CSS, or markdown, only the raw JavaScript code block. Prompt: "${prompt}"`,
-        });
-        const vexflowCode = response.text || '';
-        
-        // This is a placeholder for a more complex SVG generation service if needed.
-        // For now, we return a simple representation. This could be expanded.
-        const svgContent = `<svg width="${width}" height="150" xmlns="http://www.w3.org/2000/svg" class="bg-white p-2 rounded"><text x="10" y="20" font-family="monospace" font-size="10">VexFlow Render for: ${prompt.replace(/</g, "&lt;")}</text><script>${vexflowCode}</script></svg>`;
-        return svgContent;
-        
-    } catch (e) {
-        console.error("Error generating sheet music:", e);
-        throw new Error("Failed to generate sheet music SVG.");
-    }
-};
-
-export const findAndAnalyzeSheetMusic = async (query: string): Promise<any> => {
-    try {
-        const aiInstance = initializeAI();
-        const response = await aiInstance.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: `First, perform a Google search for: "${query}". Find the most accurate image of the sheet music from the results. Then, act as an expert musicologist, analyze that image and extract its key properties. Return a strict JSON object with keys: "noteSequence", "rhythmDescription", "bpm", "keySignature", "timeSignature", and include a "sourceURL" key with the URL of the image you analyzed.`,
-            config: {
-                tools: [{ googleSearch: {} }],
-                responseMimeType: "application/json"
-            },
-        });
-        const text = response.text;
-        if (!text) throw new Error("Could not find or analyze sheet music online.");
-        return JSON.parse(text);
-    } catch (e) {
-        console.error("Error finding/analyzing sheet music:", e);
-        throw new Error("Failed to find and analyze sheet music online.");
-    }
-};
-
-
-export const searchYouTubeVideos = async (query: string): Promise<YouTubeResult[]> => {
-    try {
-         const aiInstance = initializeAI();
-         const prompt = `Search for YouTube videos matching the query: "${query}". 
-         Find 5 relevant videos (music videos, lyric videos, or live performances).
-         Return a JSON object containing an array "videos". Each item must have:
-         - "id" (simulate a unique string id)
-         - "title" (string)
-         - "channel" (string)
-         - "thumbnail" (string url, use a placeholder if unknown like 'https://placehold.co/320x180/red/white?text=Video')
-         - "url" (full youtube url)
-         
-         Use the googleSearch tool to find real titles and channels.`;
-
-         const response = await aiInstance.models.generateContent({
-             model: "gemini-2.5-flash",
-             contents: prompt,
-             config: {
-                 tools: [{ googleSearch: {} }],
-                 responseMimeType: "application/json"
-             }
-         });
-
-         const text = response.text;
-         if(!text) return [];
-         const data = JSON.parse(text);
-         return data.videos || [];
-    } catch (error) {
-        console.error("Error searching YouTube:", error);
-        return [];
-    }
-}
-
-export const generateSpeech = async (text: string, voiceName: string = 'Puck'): Promise<string | undefined> => {
-    try {
-        const aiInstance = initializeAI();
-        const response = await aiInstance.models.generateContent({
-            model: "gemini-2.5-flash-preview-tts",
-            contents: { parts: [{ text }] },
+            model: 'gemini-2.5-flash-preview-tts',
+            contents: [{ parts: [{ text: text }] }],
             config: {
                 responseModalities: [Modality.AUDIO],
                 speechConfig: {
                     voiceConfig: {
-                        prebuiltVoiceConfig: { voiceName }
-                    }
-                }
-            }
+                        prebuiltVoiceConfig: { voiceName: voiceName as any },
+                    },
+                },
+            },
         });
         
-        // Extract Base64 Audio Data
-        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        return base64Audio;
+        const audioPart = response.candidates?.[0]?.content?.parts?.[0];
+        if (audioPart && audioPart.inlineData?.data) {
+            return audioPart.inlineData.data;
+        }
+        return null;
     } catch (error) {
         console.error("Error generating speech:", error);
-        throw new Error("Failed to generate speech.");
+        return null;
     }
-}
+};
 
-// --- Large File Upload (Resumable) ---
 export const uploadFileToGemini = async (file: File): Promise<string> => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) throw new Error("API Key missing");
+    // This is a placeholder. In a real application, you might use a service
+    // like Firebase Storage or a custom backend to get a Gemini-accessible URI.
+    console.log(`Simulating upload for ${file.name}. In a real app, this would return a gs:// URI.`);
+    return `simulated-uri-for/${file.name}`;
+};
 
-  // 1. Start Resumable Upload
-  // The Gemini API uses the Google Cloud Resumable upload protocol
-  const initRes = await fetch(`https://generativelanguage.googleapis.com/upload/v1beta/files?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'X-Goog-Upload-Protocol': 'resumable',
-      'X-Goog-Upload-Command': 'start',
-      'X-Goog-Upload-Header-Content-Length': file.size.toString(),
-      'X-Goog-Upload-Header-Content-Type': file.type,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ file: { display_name: file.name } })
-  });
+export const searchYouTubeVideos = async (query: string): Promise<YouTubeResult[]> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    
+    const prompt = `Search YouTube for "${query}". Return a JSON array of the top 5 video results. Each object must have "id", "title", "channel", "thumbnail", and "url".`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+    });
 
-  const uploadUrl = initRes.headers.get('x-goog-upload-url');
-  if (!uploadUrl) throw new Error("Failed to initiate upload to Gemini");
+    try {
+        return JSON.parse(response.text || '[]');
+    } catch (e) {
+        console.error("Failed to parse YouTube search results:", response.text);
+        return [];
+    }
+};
 
-  // 2. Upload Bytes
-  const uploadRes = await fetch(uploadUrl, {
-    method: 'POST', 
-    headers: {
-      'Content-Length': file.size.toString(),
-      'X-Goog-Upload-Offset': '0',
-      'X-Goog-Upload-Command': 'upload, finalize'
-    },
-    body: file
-  });
+export const analyzeYouTubeAudio = async (youtubeUrl: string): Promise<any> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    const prompt = `Act as a master audio engineer. Analyze the song at this YouTube URL: ${youtubeUrl}. Provide a detailed breakdown of its musical characteristics. Return ONLY a JSON object with keys: "bpm", "key", "scale", "instrumentationDescription" (a summary of main instruments), and "mood".`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+    });
+    
+    try {
+        return JSON.parse(response.text || '{}');
+    } catch (e) {
+        return { error: 'Failed to analyze audio.' };
+    }
+};
 
-  if (!uploadRes.ok) throw new Error("Upload to Gemini failed");
+export const performBassAnalysis = async (params: { youtubeUrl?: string, textDescription?: string, audioAttachment?: Part }): Promise<any> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    
+    let prompt = "Act as an expert audio physicist with perfect pitch and an oscilloscope for eyes. Analyze the provided bass sound reference and return a highly detailed JSON object describing its physical and musical properties. Your analysis must include: dominantFrequency (in Hz), waveform (sine, square, triangle, or sawtooth), adsrEnvelope (an object with attack, decay, sustain, release in seconds), tuning (e.g., 'tuned to C#'), and harmonicContent ('clean', 'rich', or 'distorted').\n\nReference:\n";
+    
+    const parts: Part[] = [];
+    if (params.youtubeUrl) prompt += `- YouTube URL: ${params.youtubeUrl}\n`;
+    if (params.textDescription) prompt += `- Description: ${params.textDescription}\n`;
+    parts.push({ text: prompt });
+    if (params.audioAttachment) parts.push(params.audioAttachment);
 
-  const result = await uploadRes.json();
-  return result.file.uri;
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts },
+        config: { responseMimeType: "application/json" }
+    });
+
+    try {
+        return JSON.parse(response.text || '{}');
+    } catch (e) {
+        return { error: "Failed to perform bass analysis." };
+    }
+};
+
+export const analyzeSheetMusicImage = async (imagePart: Part): Promise<any> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    
+    const prompt = "Analyze this image of sheet music. Extract the note sequence, rhythm, estimated BPM, key signature, and time signature. Return ONLY a JSON object with keys: 'noteSequence', 'rhythmDescription', 'bpm', 'keySignature', 'timeSignature'.";
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [imagePart, { text: prompt }] },
+        config: { responseMimeType: "application/json" }
+    });
+
+    try {
+        return JSON.parse(response.text || '{}');
+    } catch (e) {
+        return { error: "Failed to read sheet music." };
+    }
+};
+
+export const generateSheetMusicSVG = async (prompt: string, width: number = 500): Promise<string> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    
+    const fullPrompt = `You are an expert musicologist and SVG graphic designer. A user wants to see sheet music for the following musical idea: "${prompt}". Your task is to generate the complete, valid SVG code to render this sheet music. The SVG should have a white background, be ${width}px wide, and the height should be auto-adjusted. Do not include any explanations, just the raw <svg>...</svg> code.`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+    });
+    
+    return response.text?.trim().replace(/```svg|```/g, '') || '<svg><text>Error</text></svg>';
+};
+
+export const findAndAnalyzeSheetMusic = async (query: string): Promise<any> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+    
+    const prompt = `First, use Google Search to find sheet music for "${query}". Then, analyze the most relevant image result. Extract the key, time signature, and the first few bars of the main melody. Return this information as a JSON object with keys: 'key', 'timeSignature', 'melodySnippet', and 'sourceUrl'.`;
+    
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+            tools: [{ googleSearch: {} }],
+            responseMimeType: "application/json"
+        },
+    });
+
+    try {
+        return JSON.parse(response.text || '{}');
+    } catch (e) {
+        return { error: "Failed to find or analyze sheet music online." };
+    }
+};
+
+export const generateSequencerPatternFromPrompt = async (prompt: string, pads: DrumPadConfig[]): Promise<{ grid: Record<number, boolean[]>, bpm: number }> => {
+    const aiInstance = initializeAI();
+    if (!aiInstance) throw new Error("AI not initialized");
+
+    const kitLayout = pads.map(p => `ID ${p.id}: ${p.label} (${p.soundType})`).join('\n');
+    
+    const fullPrompt = `You are an expert drum machine programmer. The user wants a 16-step drum pattern based on this prompt: "${prompt}".
+    The available drum kit layout is:
+    ${kitLayout}
+
+    Analyze the prompt and the kit. Create a musically appropriate 16-step pattern. Also, suggest an appropriate BPM for this style.
+    Return ONLY a JSON object with two keys:
+    1. "bpm": a number (e.g., 90)
+    2. "grid": an object where keys are pad IDs (as strings) and values are arrays of 16 booleans representing the steps. Example: { "4": [true, false, false, false, ...], "5": [false, false, true, false, ...] }
+    `;
+
+    const response = await aiInstance.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: fullPrompt,
+        config: { responseMimeType: "application/json" }
+    });
+
+    try {
+        const parsed = JSON.parse(response.text || '{}');
+        const grid: Record<number, boolean[]> = {};
+        if (parsed.grid) {
+            for (const padIdStr in parsed.grid) {
+                const padId = parseInt(padIdStr, 10);
+                if (!isNaN(padId) && Array.isArray(parsed.grid[padIdStr]) && parsed.grid[padIdStr].length === 16) {
+                    grid[padId] = parsed.grid[padIdStr];
+                }
+            }
+        }
+        return { grid, bpm: parsed.bpm || 120 };
+    } catch (e) {
+        console.error("Failed to parse sequencer pattern:", response.text);
+        throw new Error("AI returned invalid data for the sequencer pattern.");
+    }
 };
