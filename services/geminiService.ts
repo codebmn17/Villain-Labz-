@@ -93,15 +93,16 @@ export const sendMessageToAI = async (
     
     chatInstance = createChat(history, activeModel);
     
-    let contentToSend: string | Part | (string | Part)[];
+    let contentToSend: string | (string | Part)[];
 
     if (Array.isArray(message) && message.length > 0 && message[0] && typeof message[0] === 'object' && 'name' in message[0] && 'response' in message[0]) {
         const functionResponses = message as FunctionResponse[];
         contentToSend = functionResponses.map(fr => ({ functionResponse: fr }));
     } else {
-        contentToSend = message as string | Part | (string | Part)[];
+        contentToSend = message as string | (string | Part)[];
     }
 
+    // FIX: The sendMessage method for Chat expects an object with a `message` property.
     const result: GenerateContentResponse = await chatInstance.sendMessage({ message: contentToSend });
     const newHistory = await chatInstance.getHistory();
     

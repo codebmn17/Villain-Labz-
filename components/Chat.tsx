@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult, SongArrangement, SequencerPattern } from '../types';
+import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult, SongArrangement, SequencerPattern, SongSection } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis, generateSequencerPatternFromPrompt } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part, FunctionCall } from '@google/genai';
@@ -60,7 +60,6 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   
-  // FIX: useRef does not take a lazy initializer. The value is initialized directly.
   const aiHistory = useRef<Content[]>(
     JSON.parse(localStorage.getItem(AI_HISTORY_KEY) || '[]')
   );
@@ -69,7 +68,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
   const {
     setCurrentView, setElevenLabsKey, setOpenAIKey, setClaudeKey, setNinjaKey, setIsDjActive, setClonedVoices,
     clonedVoices, isDjActive, setGeneratedTracks, generatedTracks,
-    drumPads, setDrumPads, activeModel, isAiVoiceEnabled, setIsAiVoiceEnabled,
+    drumPads, setDrumPads, activeModel, isAiVoiceEnabled, setIsAiVoiceEnabled, customModelName,
     setCodeLabContent, setRunCodeLabTrigger, setReverbMix, setReverbDecay,
     setBpm, setSequencerGrid, savedPatterns, savedArrangements, setSavedArrangements,
   } = appController;
@@ -139,9 +138,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     });
 
     try {
-        let result = await sendMessageToAI(parts, aiHistory.current, activeModel);
-        aiHistory.current = result.newHistory;
-        let response = result.response;
+        let { response, newHistory } = await sendMessageToAI(parts, aiHistory.current, activeModel);
+        aiHistory.current = newHistory;
         
         let functionCalls: FunctionCall[] | undefined = response.functionCalls;
         
@@ -243,26 +241,28 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                             }
                             break;
                         }
-                        case 'writeSheetMusic':
-                            toolResult = await generateSheetMusicSVG(args.prompt as string, args.width as number);
+                        case 'writeSheetMusic': {
+                            const { svg } = await generateSheetMusicSVG(args.prompt as string, args.width as number);
+                            toolResult = { success: true, message: 'Sheet music generated.', svgContent: svg };
                             break;
+                        }
                         case 'findAndReadSheetMusicOnline':
                             toolResult = await findAndAnalyzeSheetMusic(args.query as string);
                             break;
                         case 'updateCodeLab':
                             setCodeLabContent(args.code as string);
-                            toolResult = { success: true, message: 'Code lab updated.' };
+                            toolResult = { success: true, message: "Code lab updated." };
                             break;
                         case 'runCodeLab':
                             setRunCodeLabTrigger(prev => prev + 1);
-                            toolResult = { success: true, message: 'Code lab execution triggered.' };
+                            toolResult = { success: true, message: "Code lab execution triggered." };
                             break;
                         case 'generateSequencerPattern': {
-                            const pattern = await generateSequencerPatternFromPrompt(args.prompt as string, drumPads);
-                            setSequencerGrid(pattern.grid);
-                            setBpm(pattern.bpm);
-                            toolResult = { success: true, message: `Sequencer pattern generated at ${pattern.bpm} BPM.` };
-                            break;
+                             const { grid, bpm: newBpm } = await generateSequencerPatternFromPrompt(args.prompt as string, drumPads);
+                             setSequencerGrid(grid);
+                             setBpm(newBpm);
+                             toolResult = { success: true, message: `Sequencer pattern generated at ${newBpm} BPM.` };
+                             break;
                         }
                         case 'listSequencerPatterns':
                             toolResult = savedPatterns.map(p => ({ id: p.id, name: p.name, bpm: p.bpm }));
@@ -271,127 +271,148 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                             const newArrangement: SongArrangement = {
                                 id: Date.now().toString(),
                                 name: args.name as string,
-                                sections: args.sections as any[],
+                                sections: args.sections as SongSection[],
                             };
-                            const updatedArrangements = [...savedArrangements, newArrangement];
-                            setSavedArrangements(updatedArrangements);
-                             localStorage.setItem('villain_song_arrangements', JSON.stringify(updatedArrangements));
-                            toolResult = { success: true, message: `Song arrangement '${newArrangement.name}' created.` };
-                            break;
+                            setSavedArrangements([...savedArrangements, newArrangement]);
+                             toolResult = { success: true, message: `Song arrangement '${args.name}' created.` };
+                             break;
                         }
-
+                        default:
+                            toolResult = { error: `Unknown tool: ${call.name}` };
                     }
                 } catch (e: any) {
-                    console.error(`Error executing tool ${call.name}:`, e);
-                    toolResult = { error: e.message || 'An unknown error occurred.' };
+                    console.error(`Tool ${call.name} execution error:`, e);
+                    toolResult = { error: e.message || `Tool ${call.name} failed.` };
                 }
 
                 toolResponses.push({
                     name: call.name,
-                    response: { result: JSON.stringify(toolResult) }
+                    response: toolResult,
                 });
             }
-            
-            result = await sendMessageToAI(toolResponses, aiHistory.current, activeModel);
-            aiHistory.current = result.newHistory;
-            response = result.response;
+
+            const toolResponseResult = await sendMessageToAI(toolResponses, aiHistory.current, activeModel);
+            response = toolResponseResult.response;
+            aiHistory.current = toolResponseResult.newHistory;
             functionCalls = response.functionCalls;
         }
 
-        const aiText = response.text || "I'm not sure how to respond to that.";
-        const aiMessage: ChatMessage = { sender: 'ai', text: aiText };
+        let responseText = response.text || '';
+        let svgContent: string | undefined;
+        let htmlContent: string | undefined;
 
-        // Check for special content types in the final response
-        if (response.candidates && response.candidates[0].content.parts.length > 1) {
-            const lastPart = response.candidates[0].content.parts[response.candidates[0].content.parts.length-1];
-            // This is a simple heuristic; might need refinement
-            if (typeof lastPart.text === 'string' && lastPart.text.trim().startsWith('<svg')) {
-                 aiMessage.svgContent = lastPart.text.trim();
-            }
+        // Check if a tool returned SVG content to be displayed
+        const lastToolResponse = (aiHistory.current[aiHistory.current.length - 1]?.parts[0] as any)?.functionResponse?.response;
+        if (lastToolResponse?.svgContent) {
+            svgContent = lastToolResponse.svgContent;
+            if (!responseText) responseText = "Here is the sheet music you requested.";
         }
         
+        const aiMessage: ChatMessage = { sender: 'ai', text: responseText, svgContent, htmlContent };
         setMessages(prev => [...prev, aiMessage]);
-        
-        if (isAiVoiceEnabled) {
-            const audioBase64 = await generateSpeech(aiText);
-            if (audioBase64) playEncodedAudio(audioBase64);
+
+        // Voice Generation
+        if (isAiVoiceEnabled && responseText) {
+            if (appController.elevenLabsKey) {
+                // ALWAYS use the custom voice ID for the AI's own voice.
+                const voiceIdToUse = 'OQlPYXZeVu4JfhxehPYh'; 
+                try {
+                    const audioUrl = await elevenLabsGenerate(responseText, appController.elevenLabsKey, voiceIdToUse);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                } catch (e) {
+                    console.error("ElevenLabs speech synthesis failed, falling back.", e);
+                    const audioBase64 = await generateSpeech(responseText);
+                    if (audioBase64) playEncodedAudio(audioBase64);
+                }
+            } else {
+                const audioBase64 = await generateSpeech(responseText);
+                if (audioBase64) playEncodedAudio(audioBase64);
+            }
         }
 
     } catch (error) {
-        console.error('Error sending message to AI:', error);
-        setMessages(prev => [...prev, { sender: 'ai', text: 'Sorry, I encountered an error. Please try again.' }]);
+        console.error("Failed to send message:", error);
+        setMessages(prev => [...prev, { sender: 'ai', text: "Sorry, I encountered an error. Please check the console or try again." }]);
     } finally {
         setIsLoading(false);
     }
   };
 
+  const getAiName = () => {
+    switch(activeModel) {
+      case 'openai': return 'DJ OpenAI';
+      case 'claude': return 'DJ Claude';
+      case 'ninja': return 'DJ Ninja';
+      case 'custom': return customModelName || 'DJ Custom';
+      default: return 'DJ Gemini';
+    }
+  };
+
+
   return (
-    <div className="bg-gray-800 p-2 sm:p-4 rounded-xl shadow-2xl animate-fade-in h-full flex flex-col">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-purple-400">
-          DJ {
-            activeModel === 'gemini' ? 'Gemini' :
-            activeModel === 'openai' ? 'OpenAI' :
-            activeModel === 'claude' ? 'Claude' :
-            activeModel === 'ninja' ? 'Ninja' :
-            appController.customModelName
-          }
-        </h2>
-        <button 
+    <div className="flex flex-col h-full bg-gray-800 rounded-xl shadow-2xl animate-fade-in">
+      <header className="flex items-center justify-between p-4 border-b border-gray-700">
+        <h2 className="text-xl font-bold text-purple-400">{getAiName()}</h2>
+        <button
           onClick={() => setIsAiVoiceEnabled(!isAiVoiceEnabled)}
           className="p-2 rounded-full hover:bg-gray-700 transition-colors"
           title={isAiVoiceEnabled ? "Mute AI Voice" : "Unmute AI Voice"}
         >
-            {isAiVoiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
+          {isAiVoiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
         </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+      </header>
+      
+      <div className="flex-1 p-4 overflow-y-auto space-y-4">
         {messages.map((msg, index) => (
           <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`p-3 rounded-2xl max-w-sm sm:max-w-md md:max-w-lg ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
+            <div className={`p-3 rounded-lg max-w-lg ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
               <p className="whitespace-pre-wrap">{msg.text}</p>
               {msg.attachments && msg.attachments.length > 0 && (
-                  <div className="mt-2 border-t border-white/20 pt-2">
-                    {msg.attachments.map((att, i) => (
-                        <div key={i} className="text-xs text-purple-200/80">{att.name}</div>
-                    ))}
-                  </div>
+                <div className="mt-2 space-y-1">
+                  {msg.attachments.map((att, i) => (
+                    <div key={i} className="bg-black/20 p-2 rounded-md text-xs">
+                      Attached: {att.name} ({att.mimeType})
+                    </div>
+                  ))}
+                </div>
+              )}
+              {msg.audioTrack && (
+                <div className="mt-2 w-full">
+                  <AudioPlayer playlist={[msg.audioTrack]} />
+                </div>
               )}
                {msg.svgContent && (
-                    <div className="mt-2 p-2 bg-white rounded-lg" dangerouslySetInnerHTML={{ __html: msg.svgContent }} />
-                )}
+                  <div className="mt-2 bg-white p-2 rounded-md" dangerouslySetInnerHTML={{ __html: msg.svgContent }} />
+               )}
             </div>
           </div>
         ))}
         {isLoading && (
-            <div className="flex justify-start">
-                <div className="p-3 rounded-2xl bg-gray-700 text-gray-200 flex items-center space-x-2">
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-0"></div>
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-200"></div>
-                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-400"></div>
-                </div>
+          <div className="flex justify-start">
+            <div className="p-3 rounded-lg bg-gray-700 text-gray-400 animate-pulse">
+              Thinking...
             </div>
+          </div>
         )}
         <div ref={chatEndRef} />
       </div>
 
-      <div className="mt-4">
+      <div className="p-4 border-t border-gray-700">
         {attachments.length > 0 && (
-          <div className="p-2 bg-gray-700/50 rounded-lg mb-2 flex flex-wrap gap-2">
+          <div className="mb-2 space-y-2">
             {attachments.map((att, i) => (
-              <div key={i} className="bg-gray-800 px-2 py-1 rounded-md text-xs flex items-center">
-                <span className="text-purple-300 truncate max-w-xs">{att.name}</span>
-                {att.isUploading && <div className="ml-2 w-3 h-3 border-2 border-purple-300 border-t-transparent rounded-full animate-spin"></div>}
-                {att.error && <span className="ml-2 text-red-400">Error</span>}
-                <button onClick={() => setAttachments(prev => prev.filter(a => a !== att))} className="ml-2 text-gray-500 hover:text-red-400">&times;</button>
+              <div key={i} className="bg-gray-700 p-2 rounded-md flex items-center justify-between text-sm">
+                <span className="truncate">{att.name}</span>
+                {att.isUploading && <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin ml-2"></div>}
+                {att.error && <span className="text-red-500 ml-2">{att.error}</span>}
+                <button onClick={() => setAttachments(prev => prev.filter(a => a !== att))} className="ml-2 text-red-500 font-bold">×</button>
               </div>
             ))}
           </div>
         )}
-
-        <div className="flex items-center bg-gray-700 rounded-xl p-2">
-          <label htmlFor="file-upload" className="p-2 text-gray-400 hover:text-purple-400 cursor-pointer">
+        <div className="flex items-center bg-gray-700 rounded-lg">
+          <label htmlFor="file-upload" className="p-3 text-gray-400 hover:text-purple-400 cursor-pointer">
             <PaperClipIcon />
             <input id="file-upload" type="file" multiple className="hidden" onChange={handleFileUpload} />
           </label>
@@ -401,15 +422,20 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSend()}
             placeholder="Ask DJ anything..."
-            className="flex-1 bg-transparent border-none text-white placeholder-gray-400 focus:ring-0"
+            className="flex-1 bg-transparent p-3 text-white placeholder-gray-500 focus:outline-none"
             disabled={isLoading}
           />
-          <button onClick={handleSend} disabled={isLoading} className="bg-purple-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50">
-            {isLoading ? '...' : 'Send'}
+          <button
+            onClick={handleSend}
+            disabled={isLoading || (!input.trim() && attachments.length === 0)}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-bold p-3 rounded-r-lg transition-colors disabled:opacity-50"
+          >
+            Send
           </button>
         </div>
       </div>
     </div>
   );
 };
+
 export default Chat;
