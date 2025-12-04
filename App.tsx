@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
@@ -63,6 +64,8 @@ const App: React.FC = () => {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [generatedTracks, setGeneratedTracks] = useState<AudioPlaylistItem[]>([]);
   const [drumPads, setDrumPads] = useState<DrumPadConfig[]>(DEFAULT_PADS);
+  const [reverbMix, setReverbMix] = useState(0.2);
+  const [reverbDecay, setReverbDecay] = useState(1.5);
   
   // Navigation Props (for passing data between views, e.g. YouTube -> Studio)
   const [navProps, setNavProps] = useState<any>(null);
@@ -104,6 +107,8 @@ const App: React.FC = () => {
     generatedTracks,
     isOnline,
     drumPads,
+    reverbMix,
+    reverbDecay,
     setCurrentView,
     setActiveModel,
     setClonedVoices,
@@ -115,6 +120,8 @@ const App: React.FC = () => {
     setIsDjActive,
     setGeneratedTracks,
     setDrumPads,
+    setReverbMix,
+    setReverbDecay,
     navProps,
     setNavProps,
   };
@@ -133,7 +140,17 @@ const App: React.FC = () => {
           initialCoverData={navProps?.coverData}
         />;
       case AppView.DrumMachine:
-        return <DrumMachine drumPads={drumPads} setDrumPads={setDrumPads} generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} defaultPads={DEFAULT_PADS} />;
+        return <DrumMachine 
+          drumPads={drumPads} 
+          setDrumPads={setDrumPads} 
+          generatedTracks={generatedTracks} 
+          setGeneratedTracks={setGeneratedTracks} 
+          defaultPads={DEFAULT_PADS} 
+          reverbMix={reverbMix}
+          reverbDecay={reverbDecay}
+          setReverbMix={setReverbMix}
+          setReverbDecay={setReverbDecay}
+        />;
       case AppView.Chat:
         return <Chat appController={appController} />;
       case AppView.ModelManager:

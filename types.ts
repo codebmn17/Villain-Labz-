@@ -108,6 +108,8 @@ export interface AppController {
   generatedTracks: AudioPlaylistItem[];
   isOnline: boolean;
   drumPads: DrumPadConfig[];
+  reverbMix: number;
+  reverbDecay: number;
   // Setters
   setCurrentView: (view: AppView) => void;
   setActiveModel: (model: AiModel) => void;
@@ -120,6 +122,8 @@ export interface AppController {
   setIsDjActive: (isActive: boolean) => void;
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
   setDrumPads: (pads: DrumPadConfig[]) => void;
+  setReverbMix: (mix: number) => void;
+  setReverbDecay: (decay: number) => void;
   // Navigation Props (Optional for data passing)
   navProps?: any;
   setNavProps?: (props: any) => void;

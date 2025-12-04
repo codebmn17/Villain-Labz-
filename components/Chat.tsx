@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis } from '../services/geminiService';
@@ -524,6 +525,16 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                    result = { success: false, error: 'Invalid pad ID' };
                    executionResultText = 'Error: Pad ID out of range.';
                }
+               break;
+            case 'setDrumMachineEffects':
+               if (args.reverbMix !== undefined) {
+                   appController.setReverbMix(Number(args.reverbMix));
+               }
+               if (args.reverbDecay !== undefined) {
+                   appController.setReverbDecay(Number(args.reverbDecay));
+               }
+               result = { success: true, reverbMix: args.reverbMix, reverbDecay: args.reverbDecay };
+               executionResultText = 'Drum machine effects updated.';
                break;
             case 'speak':
                 try {

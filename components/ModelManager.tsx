@@ -187,7 +187,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({
 
       <div className="p-4 bg-gray-700/50 rounded-lg">
         <h3 className="text-xl font-semibold text-purple-300 mb-3">Custom AI Model</h3>
-        <p className="text-gray-400 mb-4 text-sm">Upload a compatible custom AI model file. This is an advanced feature and requires a specific model format.</p>
+        <p className="text-gray-400 mb-4 text-sm">Upload your own AI model file. This is an advanced feature that supports various formats.</p>
         
         {customModel && !isUploading && (
           <div className="bg-green-900/50 text-green-300 p-3 rounded-lg mb-4 text-center">
@@ -200,7 +200,7 @@ const ModelManager: React.FC<ModelManagerProps> = ({
           <p className="mt-4 text-gray-300">
             {isUploading ? "Uploading model..." : (customModel ? `${customModel.name} loaded` : "Upload your custom model file")}
           </p>
-          <p className="text-xs text-gray-500 mt-1">Max file size: 3GB</p>
+          <p className="text-xs text-gray-500 mt-1">Max file size: 36GB</p>
           <input 
             type="file" 
             onChange={handleFileChange}

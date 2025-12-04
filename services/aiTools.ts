@@ -254,5 +254,16 @@ export const aiTools: FunctionDeclaration[] = [
             },
             required: ['padId']
         }
+    },
+    {
+        name: 'setDrumMachineEffects',
+        description: 'Sets the global audio effects for the entire drum machine, such as reverb.',
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                reverbMix: { type: Type.NUMBER, description: 'The dry/wet mix for the reverb. 0 is fully dry, 1 is fully wet. A good value is 0.25.' },
+                reverbDecay: { type: Type.NUMBER, description: 'The decay time of the reverb in seconds. How long the "tail" is. A good value is 2.5.' }
+            }
+        }
     }
 ];

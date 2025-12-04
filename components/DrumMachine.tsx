@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { DrumPadConfig, AudioPlaylistItem, DrumKit, SequencerPattern } from '../types';
 import { VolumeIcon } from './icons/VolumeIcon';
@@ -30,9 +31,23 @@ interface DrumMachineProps {
   generatedTracks: AudioPlaylistItem[];
   setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
   defaultPads: DrumPadConfig[];
+  reverbMix: number;
+  reverbDecay: number;
+  setReverbMix: (mix: number) => void;
+  setReverbDecay: (decay: number) => void;
 }
 
-const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, generatedTracks, setGeneratedTracks, defaultPads }) => {
+const DrumMachine: React.FC<DrumMachineProps> = ({ 
+    drumPads, 
+    setDrumPads, 
+    generatedTracks, 
+    setGeneratedTracks, 
+    defaultPads,
+    reverbMix,
+    reverbDecay,
+    setReverbMix,
+    setReverbDecay
+}) => {
   const [activePadId, setActivePadId] = useState<number | null>(null);
   const [volume, setVolume] = useState(0.8);
   const [viewMode, setViewMode] = useState<'PADS' | 'SEQUENCER'>('PADS');
@@ -46,7 +61,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const [activeLoops, setActiveLoops] = useState<Set<number>>(new Set());
 
   // Performance Controls
-  const [bpm, setBpm] = useState(140);
+  const [bpm, setBpm] = useState(60);
   const [pitchBend, setPitchBend] = useState(0); // Semitones -12 to +12
   const [noteRepeat, setNoteRepeat] = useState<'OFF' | '1/8' | '1/16'>('OFF');
 
@@ -74,7 +89,8 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const audioCtxRef = useRef<AudioContext | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
-  const reverbNodeRef = useRef<ConvolverNode | null>(null); 
+  const reverbNodeRef = useRef<ConvolverNode | null>(null);
+  const wetGainRef = useRef<GainNode | null>(null);
   const destRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -215,9 +231,9 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     const right = impulse.getChannelData(1);
 
     for (let i = 0; i < length; i++) {
-      const n = i;
-      left[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
-      right[i] = (Math.random() * 2 - 1) * Math.pow(1 - n / length, decay);
+      const n = i / length; // Normalized time
+      left[i] = (Math.random() * 2 - 1) * Math.pow(1 - n, decay);
+      right[i] = (Math.random() * 2 - 1) * Math.pow(1 - n, decay);
     }
     return impulse;
   };
@@ -238,10 +254,14 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       
       const masterGain = ctx.createGain();
       const compressor = ctx.createDynamicsCompressor();
-      const reverb = ctx.createConvolver(); 
-      const dest = ctx.createMediaStreamDestination(); // For recording
+      const reverb = ctx.createConvolver();
+      const wetGain = ctx.createGain();
+      const dryGain = ctx.createGain();
+      const dest = ctx.createMediaStreamDestination();
       
-      reverb.buffer = createImpulseResponse(ctx, 0.5, 4.0);
+      reverb.buffer = createImpulseResponse(ctx, reverbDecay, 2.0);
+      wetGain.gain.value = reverbMix;
+      dryGain.gain.value = 1.0;
 
       compressor.threshold.setValueAtTime(-12, ctx.currentTime);
       compressor.knee.setValueAtTime(10, ctx.currentTime);
@@ -249,20 +269,26 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       compressor.attack.setValueAtTime(0.002, ctx.currentTime);
       compressor.release.setValueAtTime(0.15, ctx.currentTime);
 
-      compressor.connect(masterGain);
+      // Routing:
+      // Signal -> Compressor -> Dry Path & Wet Path
+      // Dry Path -> masterGain
+      // Wet Path -> Reverb -> WetGain -> masterGain
+      compressor.connect(dryGain);
+      compressor.connect(reverb);
       
-      const reverbGain = ctx.createGain();
-      reverbGain.gain.value = 0.2;
-      reverb.connect(reverbGain);
-      reverbGain.connect(masterGain);
+      reverb.connect(wetGain);
+      
+      dryGain.connect(masterGain);
+      wetGain.connect(masterGain);
 
       masterGain.connect(ctx.destination);
-      masterGain.connect(dest); // IMPORTANT: Connect to recording stream
+      masterGain.connect(dest);
       
       audioCtxRef.current = ctx;
       masterGainRef.current = masterGain;
       compressorRef.current = compressor;
       reverbNodeRef.current = reverb;
+      wetGainRef.current = wetGain;
       destRef.current = dest;
       
       masterGain.gain.value = volume;
@@ -341,6 +367,18 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       masterGainRef.current.gain.value = volume;
     }
   }, [volume]);
+
+  useEffect(() => {
+    if (wetGainRef.current && audioCtxRef.current) {
+      wetGainRef.current.gain.setValueAtTime(reverbMix, audioCtxRef.current.currentTime);
+    }
+  }, [reverbMix]);
+  
+  useEffect(() => {
+    if (reverbNodeRef.current && audioCtxRef.current) {
+      reverbNodeRef.current.buffer = createImpulseResponse(audioCtxRef.current, reverbDecay, 2);
+    }
+  }, [reverbDecay]);
 
   const handleStopSequence = () => {
       if (sequenceIntervalRef.current) {
@@ -897,6 +935,27 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                       />
                   </div>
               </div>
+          </div>
+          
+          <div className="flex items-center space-x-4 border-l border-gray-600 pl-4">
+                <div className="flex flex-col items-center">
+                    <label className="text-[10px] text-gray-400 font-bold uppercase">Reverb Mix</label>
+                    <input 
+                        type="range" min="0" max="1" step="0.01" 
+                        value={reverbMix} onChange={(e) => setReverbMix(Number(e.target.value))}
+                        className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    />
+                    <span className="text-[10px] text-emerald-400">{Math.round(reverbMix * 100)}%</span>
+                </div>
+                <div className="flex flex-col items-center">
+                    <label className="text-[10px] text-gray-400 font-bold uppercase">Reverb Decay</label>
+                    <input 
+                        type="range" min="0.1" max="5" step="0.1" 
+                        value={reverbDecay} onChange={(e) => setReverbDecay(Number(e.target.value))}
+                        className="w-20 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                    />
+                    <span className="text-[10px] text-emerald-400">{reverbDecay.toFixed(1)}s</span>
+                </div>
           </div>
 
           <div className="flex items-center space-x-2">

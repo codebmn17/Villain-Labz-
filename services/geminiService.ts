@@ -27,6 +27,7 @@ const getSystemInstruction = (model: AiModel): string => {
        - **Music Reading**: Use 'readSheetMusic' when a user uploads an image of a score. Use 'findAndReadSheetMusicOnline' to proactively research a song's composition.
        - **Music Writing**: Use 'writeSheetMusic' to compose and render a score as an SVG image in the chat.
        - Use 'configureDrumPad' to program the drum machine with sounds you have analyzed.
+       - Use 'setDrumMachineEffects' to control global effects like reverb.
        - Use 'executeJavaScript' to modify the app, generate raw audio, perform complex logic, or inject new UI elements.
        - Use 'searchYouTube' for general video searches.
        
@@ -305,7 +306,7 @@ export const findAndAnalyzeSheetMusic = async (query: string): Promise<any> => {
         const aiInstance = initializeAI();
         const response = await aiInstance.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: `First, perform a Google search for: "${query}". Find the most accurate image of the sheet music from the results. Then, act as an expert musicologist, analyze that image and extract its key properties. Return a strict JSON object with keys: "noteSequence", "rhythmDescription", "bpm", "keySignature", and "timeSignature", and include a "sourceURL" key with the URL of the image you analyzed.`,
+            contents: `First, perform a Google search for: "${query}". Find the most accurate image of the sheet music from the results. Then, act as an expert musicologist, analyze that image and extract its key properties. Return a strict JSON object with keys: "noteSequence", "rhythmDescription", "bpm", "keySignature", "timeSignature", and include a "sourceURL" key with the URL of the image you analyzed.`,
             config: {
                 tools: [{ googleSearch: {} }],
                 responseMimeType: "application/json"
