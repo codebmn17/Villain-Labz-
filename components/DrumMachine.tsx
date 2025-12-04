@@ -8,6 +8,7 @@ import { SaveIcon } from './icons/SaveIcon';
 import { FolderOpenIcon } from './icons/FolderOpenIcon';
 import { MicIcon } from './icons/MicIcon';
 import { DrumIcon } from './icons/DrumIcon';
+import { TrashIcon } from './icons/TrashIcon';
 import { saveTrackToDB } from '../services/storageService';
 
 // Soft clipping distortion curve (Warmth, not destruction)
@@ -37,7 +38,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const [viewMode, setViewMode] = useState<'PADS' | 'SEQUENCER'>('PADS');
   
   // Recording States
-  const [isSequencerRecording, setIsSequencerRecording] = useState(false);
   const [isAudioRecording, setIsAudioRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
 
@@ -80,11 +80,13 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
   const audioChunksRef = useRef<Blob[]>([]);
   const noiseBufferRef = useRef<AudioBuffer | null>(null);
   
-  // Interval Refs
-  const sequencerIntervalRef = useRef<number | null>(null);
+  // Interval Refs & Imperative State
   const noteRepeatIntervalRef = useRef<number | null>(null);
   const recordingIntervalRef = useRef<number | null>(null);
   const loopIntervalsRef = useRef<Map<number, number>>(new Map());
+  const sequenceIntervalRef = useRef<number | null>(null);
+  const isPlayingRef = useRef(false);
+  const currentStepRef = useRef(0);
 
   // Load Kits & Patterns from LocalStorage
   useEffect(() => {
@@ -186,6 +188,23 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         setDrumPads(kit.pads);
       }
     }
+  };
+  
+  const handleKitSelectionChange = (value: string) => {
+      if (value === '__SAVE_NEW_KIT__') {
+          setIsSaveModalOpen(true);
+      } else {
+          handleLoadKit(value);
+      }
+  };
+  
+  const handleDeleteKit = (kitId: string) => {
+      if (window.confirm("Are you sure you want to delete this kit permanently?")) {
+          const updatedKits = savedKits.filter(k => k.id !== kitId);
+          setSavedKits(updatedKits);
+          localStorage.setItem('villain_drum_kits', JSON.stringify(updatedKits));
+          handleLoadKit('default'); // Revert to default kit
+      }
   };
 
   const createImpulseResponse = (ctx: AudioContext, duration: number, decay: number) => {
@@ -323,6 +342,66 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
     }
   }, [volume]);
 
+  const handleStopSequence = () => {
+      if (sequenceIntervalRef.current) {
+          clearInterval(sequenceIntervalRef.current);
+          sequenceIntervalRef.current = null;
+      }
+      isPlayingRef.current = false;
+      setIsPlayingSequence(false);
+      setCurrentStep(0); // Reset visual step indicator to start
+      currentStepRef.current = 0;
+  };
+
+  const handlePlaySequence = () => {
+      initAudio();
+      isPlayingRef.current = true;
+      setIsPlayingSequence(true);
+      currentStepRef.current = -1; // Start at -1 so first tick becomes 0
+
+      const stepDurationMs = (60 / bpm) * 1000 / 4;
+      
+      sequenceIntervalRef.current = window.setInterval(() => {
+          // Guard clause: if stop was called, this ref will be false.
+          if (!isPlayingRef.current) {
+              if (sequenceIntervalRef.current) clearInterval(sequenceIntervalRef.current);
+              return;
+          }
+          
+          const ctx = audioCtxRef.current;
+          if(!ctx) return;
+
+          // 1. Advance Step
+          currentStepRef.current = (currentStepRef.current + 1) % 16;
+          setCurrentStep(currentStepRef.current); // Update UI state
+
+          // 2. Play sounds for the current step
+          drumPads.forEach(pad => {
+              if (sequencerGrid[pad.id]?.[currentStepRef.current]) {
+                  triggerPad(pad.id, ctx.currentTime);
+              }
+          });
+      }, stepDurationMs);
+  };
+
+  const handleToggleSequencePlayback = () => {
+      if (isPlayingSequence) {
+          handleStopSequence();
+      } else {
+          handlePlaySequence();
+      }
+  };
+
+  // Cleanup effect for when the component unmounts
+  useEffect(() => {
+    return () => {
+      if (sequenceIntervalRef.current) {
+        clearInterval(sequenceIntervalRef.current);
+      }
+    };
+  }, []);
+
+
   // --- Synthesis Engines ---
 
   // Improved 808 Generator
@@ -418,23 +497,29 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       }
   };
 
-  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'pluck' | 'lead', destination: AudioNode, detuneSteps: number = 0) => {
+  const playSynthNote = (ctx: AudioContext, freq: number, time: number, duration: number, type: 'pluck' | 'lead', destination: AudioNode) => {
     const osc1 = ctx.createOscillator();
     const osc2 = ctx.createOscillator();
     const gain = ctx.createGain();
     
-    const tunedFreq = freq * Math.pow(2, detuneSteps / 12);
+    // Guard against non-positive frequencies which cause errors in ramps.
+    const safeFreq = freq > 0 ? freq : 1; 
+
     gain.connect(destination);
 
     osc1.type = 'sawtooth';
     osc2.type = 'square';
-    osc1.frequency.setValueAtTime(tunedFreq, time);
-    osc2.frequency.setValueAtTime(tunedFreq * 1.01, time); // Detune
+    osc1.frequency.setValueAtTime(safeFreq, time);
+    osc2.frequency.setValueAtTime(safeFreq * 1.01, time); // Detune
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(tunedFreq * 4, time);
-    filter.frequency.exponentialRampToValueAtTime(tunedFreq, time + 0.2);
+    
+    const startFilterFreq = safeFreq * 4;
+    const endFilterFreq = safeFreq; 
+
+    filter.frequency.setValueAtTime(startFilterFreq > 1 ? startFilterFreq : 1, time);
+    filter.frequency.exponentialRampToValueAtTime(endFilterFreq > 0.01 ? endFilterFreq : 0.01, time + 0.2);
 
     osc1.connect(filter);
     osc2.connect(filter);
@@ -452,7 +537,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
 
   // --- FX Synths (Refined logic) ---
   const playGunCock = (ctx: AudioContext, dest: AudioNode, time: number) => {
-      // Noise burst for mechanism
       if (noiseBufferRef.current) {
           const noise = ctx.createBufferSource();
           noise.buffer = noiseBufferRef.current;
@@ -468,7 +552,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           noise.start(time);
           noise.stop(time + 0.15);
       }
-      // Metallic click
       const osc = ctx.createOscillator();
       osc.type = 'triangle';
       osc.frequency.setValueAtTime(1200, time);
@@ -493,7 +576,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         gain.gain.setValueAtTime(1.0, time);
         gain.gain.exponentialRampToValueAtTime(0.001, time + 0.8);
         
-        // Distortion for aggression
         const shaper = ctx.createWaveShaper();
         shaper.curve = makeDistortionCurve(100);
         
@@ -504,7 +586,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         noise.start(time);
         noise.stop(time + 1.0);
         
-        // Low thump
         playTrapKick(ctx, dest, time, 60, 0.3, true, 'square');
       }
   };
@@ -517,7 +598,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       
       const gain = ctx.createGain();
       
-      // LFO Pitch Modulation
       const now = time;
       [osc1, osc2].forEach(osc => {
           osc.frequency.setValueAtTime(600, now);
@@ -544,7 +624,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
         filter.type = 'bandpass';
         filter.Q.value = 8;
         
-        // "Wiki-Wiki" filter sweep
         filter.frequency.setValueAtTime(800, time);
         filter.frequency.linearRampToValueAtTime(2000, time + 0.05);
         filter.frequency.linearRampToValueAtTime(500, time + 0.12);
@@ -568,29 +647,27 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       const bar = beat * 4;
       
       const loopGain = ctx.createGain();
-      loopGain.gain.value = 2.0; // Boost loop volume
+      loopGain.gain.value = 2.0; 
       
-      // Heavy Bus Compression & Saturation
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -24;
       comp.ratio.value = 12;
       
       const shaper = ctx.createWaveShaper();
-      shaper.curve = makeDistortionCurve(20); // Mild saturation
+      shaper.curve = makeDistortionCurve(20); 
       
       loopGain.connect(comp);
       comp.connect(shaper);
       shaper.connect(dest);
 
-      // Heavy Synth Helper (Sub + Saw)
       const playHeavySynth = (startTime: number, freq: number, dur: number) => {
            const osc = ctx.createOscillator();
            const sub = ctx.createOscillator();
            osc.type = 'sawtooth';
-           sub.type = 'square'; // Sub osc
+           sub.type = 'square';
            
            osc.frequency.setValueAtTime(freq, startTime);
-           sub.frequency.setValueAtTime(freq / 2, startTime); // Octave down
+           sub.frequency.setValueAtTime(freq / 2, startTime);
            
            const g = ctx.createGain();
            g.gain.setValueAtTime(0.4, startTime);
@@ -623,10 +700,9 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           playTrapKick(ctx, loopGain, t, 35, 3.0, true, 'triangle'); 
           playTrapKick(ctx, loopGain, t+bar*2, 30, 3.0, true, 'triangle');
           
-          // Heavy chords
           const chord = (st: number, notes: number[]) => notes.forEach(n => playHeavySynth(st, n, bar));
-          chord(t, [144.16, 216.00]); // D, A
-          chord(t+bar*2, [128.29, 192.43]); // C, G
+          chord(t, [144.16, 216.00]);
+          chord(t+bar*2, [128.29, 192.43]);
       }
       else if (padId === 18) { // Rock
           for(let i=0; i<16; i++) {
@@ -658,12 +734,8 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
       const master = compressorRef.current;
       const freq = pad.baseFrequency * Math.pow(2, pitchBend / 12);
 
-      // --- Loop Logic (Loops Toggling) ---
-      // If this call is from user interaction (not sequencer), handle loop toggling
-      // We check 'when' === 0 as a proxy for immediate user interaction
       if (isLoopMode && when === 0) {
           if (activeLoops.has(padId)) {
-              // Stop Loop
               const interval = loopIntervalsRef.current.get(padId);
               if (interval) clearInterval(interval);
               loopIntervalsRef.current.delete(padId);
@@ -672,19 +744,16 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                   next.delete(padId);
                   return next;
               });
-              return; // Don't trigger single shot if stopping
+              return;
           } else {
-              // Start Loop
               setActiveLoops(prev => new Set(prev).add(padId));
               const beatMs = (60 / bpm) * 1000;
               const loopDurationMs = padId >= 16 ? beatMs * 16 : beatMs * 4; 
               
               const interval = window.setInterval(() => {
-                   // Re-fetch pad to get updated pitch bend if needed
-                   const currentPad = drumPads[padId];
-                   // Always init audio in interval to prevent suspension issues
                    if(audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume();
                    if(audioCtxRef.current && compressorRef.current) {
+                      const currentPad = drumPads[padId];
                       const currentFreq = currentPad.baseFrequency * Math.pow(2, pitchBend / 12);
                       triggerSound(audioCtxRef.current, compressorRef.current, audioCtxRef.current.currentTime, currentPad, currentFreq);
                    }
@@ -694,17 +763,6 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           }
       }
 
-      // Sequencer Record
-      if (isSequencerRecording && isPlayingSequence && padId < 16 && when === 0) {
-          const stepToRecord = Math.round(currentStep) % 16;
-          setSequencerGrid(prev => {
-              const newGrid = { ...prev };
-              newGrid[padId][stepToRecord] = true;
-              return newGrid;
-          });
-      }
-
-      // Trigger Immediate Sound
       triggerSound(ctx, master, time, pad, freq);
   };
 
@@ -724,16 +782,14 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
           playHiHat(ctx, master, time, pad.volumeDecay);
       }
       else if (pad.soundType === 'synth') {
-          playSynthNote(ctx, freq, time, pad.volumeDecay, 'pluck', master, pitchBend);
+          playSynthNote(ctx, freq, time, pad.volumeDecay, 'pluck', master);
       }
       else if (pad.soundType === 'fx') {
-            // Strict ID matching for reliable FX
             if (pad.id === 12) playGunCock(ctx, master, time);
             else if (pad.id === 13) playGunBlast(ctx, master, time);
             else if (pad.id === 14) playSiren(ctx, master, time);
             else if (pad.id === 15) playScratch(ctx, master, time);
             else {
-                // Fallback only if ID doesn't match
                  const label = pad.label.toLowerCase();
                  if (label.includes('gun') && label.includes('cock')) playGunCock(ctx, master, time);
                  else if (label.includes('blast')) playGunBlast(ctx, master, time);
@@ -870,20 +926,31 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                </button>
 
                <div className="h-6 w-px bg-gray-600 mx-2"></div>
-
-               <select 
-                  value={selectedKitId}
-                  onChange={(e) => handleLoadKit(e.target.value)}
-                  className="bg-gray-900 border border-gray-600 rounded px-2 py-1 text-xs text-white focus:outline-none max-w-[120px]"
-               >
-                  <option value="default">Default Kit</option>
-                  {savedKits.map(kit => (
-                      <option key={kit.id} value={kit.id}>{kit.name}</option>
-                  ))}
-               </select>
-               <button onClick={() => setIsSaveModalOpen(true)} className="p-1.5 text-gray-400 hover:text-emerald-400" title="Save Kit">
-                  <SaveIcon className="w-5 h-5" />
-               </button>
+               
+               <div className="flex items-center">
+                    <select
+                        value={selectedKitId}
+                        onChange={(e) => handleKitSelectionChange(e.target.value)}
+                        className={`bg-gray-900 border border-gray-600 px-2 py-1.5 text-xs text-white focus:outline-none max-w-[150px] ${selectedKitId !== 'default' ? 'rounded-l-md' : 'rounded-md'}`}
+                    >
+                        <option value="default">Default Kit</option>
+                        {savedKits.map(kit => (
+                            <option key={kit.id} value={kit.id}>{kit.name}</option>
+                        ))}
+                        <option value="__SAVE_NEW_KIT__" className="italic text-emerald-400 bg-gray-800 mt-1 pt-1 border-t border-gray-700">
+                            + Save current kit...
+                        </option>
+                    </select>
+                    {selectedKitId !== 'default' && (
+                        <button
+                            onClick={() => handleDeleteKit(selectedKitId)}
+                            className="bg-gray-800 border border-l-0 border-gray-600 rounded-r-md p-1.5 text-gray-500 hover:text-red-500 hover:bg-gray-700"
+                            title="Delete selected kit"
+                        >
+                            <TrashIcon className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
           </div>
       </div>
 
@@ -901,7 +968,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                       <button
                           key={pad.id}
                           onPointerDown={(e) => {
-                              e.preventDefault(); // Prevent mouse/touch conflicts
+                              e.preventDefault(); 
                               handlePadDown(pad.id);
                           }}
                           onPointerUp={(e) => {
@@ -912,7 +979,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                               e.preventDefault();
                               handlePadUp(pad.id);
                           }}
-                          onClick={(e) => e.preventDefault()} // Prevent default click behavior causing double triggers
+                          onClick={(e) => e.preventDefault()}
                           className={`relative rounded-xl shadow-lg transition-all duration-75 border-b-4 active:border-b-0 active:translate-y-1 flex flex-col items-center justify-center p-2 group touch-none select-none
                               ${activePadId === pad.id ? 'border-white ring-4 ring-emerald-400/50 z-10 scale-95' : 'border-black/30'}
                               ${activeLoops.has(pad.id) ? 'ring-2 ring-yellow-400 bg-blend-overlay brightness-125' : ''}
@@ -938,25 +1005,13 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                    <div className="flex justify-between items-center mb-4 sticky top-0 bg-gray-900 z-10 pb-2 border-b border-gray-700">
                        <div className="flex space-x-2 items-center">
                            <button 
-                               onClick={() => setIsPlayingSequence(!isPlayingSequence)}
+                               onClick={handleToggleSequencePlayback}
                                className={`flex items-center px-4 py-2 rounded font-bold text-white shadow-lg transition ${isPlayingSequence ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}
                            >
                                {isPlayingSequence ? <StopIcon className="mr-2" /> : <PlayIcon className="mr-2" />}
                                {isPlayingSequence ? 'STOP' : 'PLAY'}
                            </button>
                            
-                           <button
-                                onClick={() => setIsSequencerRecording(!isSequencerRecording)}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
-                                    isSequencerRecording 
-                                    ? 'bg-red-600 border-red-400 animate-pulse shadow-[0_0_10px_rgba(220,38,38,0.8)]' 
-                                    : 'bg-gray-800 border-gray-600 text-gray-400 hover:border-red-500'
-                                }`}
-                                title="Record Pattern Steps"
-                           >
-                               <div className={`w-4 h-4 rounded-full ${isSequencerRecording ? 'bg-white' : 'bg-red-600'}`}></div>
-                           </button>
-
                            <button onClick={clearSequencer} className="px-3 py-2 bg-gray-700 text-gray-300 hover:text-white rounded font-bold text-xs">CLEAR</button>
                            <button onClick={randomizeSequencer} className="px-3 py-2 bg-gray-700 text-gray-300 hover:text-white rounded font-bold text-xs">RANDOM</button>
                        </div>
@@ -983,7 +1038,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                            {/* Step Indicators */}
                            <div className="flex mb-1 ml-24">
                                {Array.from({ length: 16 }).map((_, i) => (
-                                   <div key={i} className={`flex-1 h-1 mx-0.5 rounded-full transition-colors ${currentStep === i ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-gray-700'}`}></div>
+                                   <div key={i} className={`flex-1 h-1 mx-0.5 rounded-full transition-colors ${isPlayingSequence && currentStep === i ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-gray-700'}`}></div>
                                ))}
                            </div>
                            
@@ -1001,7 +1056,7 @@ const DrumMachine: React.FC<DrumMachineProps> = ({ drumPads, setDrumPads, genera
                                                className={`
                                                    w-full aspect-square mx-0.5 rounded-sm transition-all duration-100
                                                    ${sequencerGrid[pad.id][stepIndex] ? pad.color : 'bg-gray-800 hover:bg-gray-700'}
-                                                   ${currentStep === stepIndex ? 'ring-1 ring-white brightness-150' : ''}
+                                                   ${isPlayingSequence && currentStep === stepIndex ? 'ring-1 ring-white brightness-150' : ''}
                                                `}
                                            ></button>
                                        ))}

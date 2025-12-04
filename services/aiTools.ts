@@ -62,7 +62,7 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['name']
         }
     },
-    // YouTube
+    // YouTube & Audio Analysis
     {
         name: 'searchYouTube',
         description: 'Searches YouTube for videos. Use this to find songs, artists, or reference material.',
@@ -72,6 +72,17 @@ export const aiTools: FunctionDeclaration[] = [
                 query: { type: Type.STRING, description: 'The search query.' }
             },
             required: ['query']
+        }
+    },
+    {
+        name: 'analyzeYouTubeAudio',
+        description: "Enables the AI to 'hear' a song. Analyzes the audio from a YouTube URL to extract deep musical features like BPM, key, scale, primary instrumentation, and mood. This is critical for understanding a user's sonic preferences.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                youtubeUrl: { type: Type.STRING, description: 'The full URL of the YouTube video to analyze.' }
+            },
+            required: ['youtubeUrl']
         }
     },
     // State Querying

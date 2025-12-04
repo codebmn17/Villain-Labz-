@@ -22,9 +22,10 @@ const getSystemInstruction = (model: AiModel): string => {
     const baseDirectives = `
     YOUR CORE DIRECTIVES (AUTONOMOUS CONTROL):
     1. **Tool Mastery**: You have full access to the 'aiTools'.
-       - Use 'configureDrumPad' to program the drum machine.
+       - **Hearing Ability**: Use 'analyzeYouTubeAudio' to 'listen' to music from a URL. This is your primary research tool for understanding a user's sonic request. Analyze a reference track *before* programming the drum machine.
+       - Use 'configureDrumPad' to program the drum machine with sounds you have analyzed.
        - Use 'executeJavaScript' to modify the app, generate raw audio, perform complex logic, or inject new UI elements.
-       - Use 'searchYouTube' to find real-world videos and music references.
+       - Use 'searchYouTube' for general video searches.
        
     2. **Music Generation Protocol (CRITICAL)**: 
        - Do NOT call 'generateOriginalMusic' or 'generateCoverSong' immediately when asked to make music.
@@ -174,6 +175,33 @@ export const analyzeSongMetadata = async (title: string, artist: string): Promis
     } catch (error) {
         console.error("Error analyzing song metadata:", error);
         return { bpm: 120, style: "Unknown" }; // Fallback
+    }
+};
+
+export const analyzeYouTubeAudio = async (youtubeUrl: string): Promise<any> => {
+    try {
+        const aiInstance = initializeAI();
+        const prompt = `You are an expert audio analysis tool. Based on web search results for the song at this URL: "${youtubeUrl}", determine its key musical properties. 
+        Provide the BPM, musical key, scale (e.g., minor, major, pentatonic), a description of the primary instrumentation (especially drums and bass), and the overall mood. 
+        Return this as a strict JSON object with keys: "bpm" (number), "key" (string), "scale" (string), "instrumentationDescription" (string), and "mood" (string).`;
+        
+        const response = await aiInstance.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No analysis returned from AI.");
+
+        return JSON.parse(text);
+
+    } catch (error) {
+        console.error("Error analyzing YouTube audio:", error);
+        throw new Error("Failed to perform audio analysis.");
     }
 };
 

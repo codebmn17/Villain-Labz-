@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -134,7 +134,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       const files = Array.from(e.target.files);
       
       // 1. Add placeholders with isUploading=true
-      const newAttachments: ChatAttachment[] = files.map(file => ({
+      // FIX: Explicitly type 'file' as File to help TypeScript inference.
+      const newAttachments: ChatAttachment[] = files.map((file: File) => ({
           name: file.name,
           mimeType: file.type,
           isUploading: true,
@@ -217,7 +218,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
       // 3. Update state: Replace pending items with processed results
       setAttachments(prev => {
           // We remove the pending items that correspond to the files we just processed
-          const remaining = prev.filter(p => !files.includes(p.originalFile!) || !p.isUploading);
+          const remaining = prev.filter(p => !files.some(f => f === p.originalFile) || !p.isUploading);
           return [...remaining, ...processedAttachments];
       });
     }
@@ -317,6 +318,18 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                 } catch(e) {
                     result = { success: false, error: "YouTube search failed" };
                     executionResultText = "Failed to search YouTube.";
+                }
+                break;
+            case 'analyzeYouTubeAudio':
+                try {
+                    addUIMessage('ai', `Analyzing audio from the provided link...`);
+                    const analysis = await analyzeYouTubeAudio(args.youtubeUrl as string);
+                    result = { success: true, analysis };
+                    executionResultText = `Successfully analyzed audio. Found BPM: ${analysis.bpm}, Key: ${analysis.key}. Ready for instructions.`;
+                } catch (e) {
+                    const errorMsg = e instanceof Error ? e.message : "Unknown analysis error";
+                    result = { success: false, error: errorMsg };
+                    executionResultText = `Failed to analyze audio: ${errorMsg}`;
                 }
                 break;
             case 'generateOriginalMusic':
