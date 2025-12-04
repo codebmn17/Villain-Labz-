@@ -1,4 +1,5 @@
 
+
 export enum AppView {
   VoiceLab = 'VOICE_LAB',
   Studio = 'STUDIO',
@@ -52,6 +53,8 @@ export interface ChatMessage {
   text: string;
   attachments?: ChatAttachment[];
   audioTrack?: AudioPlaylistItem; // Track generated in this message
+  svgContent?: string; // For rendering sheet music, etc.
+  htmlContent?: string; // For rendering rich HTML content
 }
 
 export type SoundType = 'kick' | 'snare' | 'hihat' | 'bass' | 'fx' | 'synth';

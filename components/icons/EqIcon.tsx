@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const EqIcon: React.FC<{ className?: string }> = ({ className = "h-6 w-6" }) => (

@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 export const AgentIcon: React.FC<{ className?: string }> = ({ className = "h-10 w-10 text-purple-400" }) => (

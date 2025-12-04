@@ -1,4 +1,5 @@
 
+
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';
@@ -23,6 +24,8 @@ const getSystemInstruction = (model: AiModel): string => {
     YOUR CORE DIRECTIVES (AUTONOMOUS CONTROL):
     1. **Tool Mastery**: You have full access to the 'aiTools'.
        - **Hearing Ability**: Use 'analyzeYouTubeAudio' to 'listen' to music from a URL. This is your primary research tool for understanding a user's sonic request. Analyze a reference track *before* programming the drum machine.
+       - **Music Reading**: Use 'readSheetMusic' when a user uploads an image of a score. Use 'findAndReadSheetMusicOnline' to proactively research a song's composition.
+       - **Music Writing**: Use 'writeSheetMusic' to compose and render a score as an SVG image in the chat.
        - Use 'configureDrumPad' to program the drum machine with sounds you have analyzed.
        - Use 'executeJavaScript' to modify the app, generate raw audio, perform complex logic, or inject new UI elements.
        - Use 'searchYouTube' for general video searches.
@@ -35,12 +38,13 @@ const getSystemInstruction = (model: AiModel): string => {
     
     3. **Autonomy (Code/UI)**: Unlike music generation, if a user wants a UI change or a coding task, execute 'executeJavaScript' IMMEDIATELY. Do not wait.
     
-    4. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately in the next turn.
+    4. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately in the next turn. Use 'executeJavaScript' to snapshot the app state via 'appController' to "take notes" on your work, see what went wrong, and ensure accuracy.
     5. **Code Evolution**: You are encouraged to upgrade the app's runtime behavior. You can inject CSS, create DOM elements, or hijack the AudioContext to create new sound engines via 'executeJavaScript'.
     
     KNOWLEDGE BASE:
     - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning.
     - **Music History**: Hip-hop, Drill, Trap, Rock, Pop, Electronic.
+    - **Music Theory**: You can read, write, and analyze sheet music.
     - **Healing Frequencies**: 432Hz, 528Hz, Binaural beats.
     - **YouTube Access**: You can search YouTube via the 'searchYouTube' tool to find real-world musical references.
     `;
@@ -204,6 +208,71 @@ export const analyzeYouTubeAudio = async (youtubeUrl: string): Promise<any> => {
         throw new Error("Failed to perform audio analysis.");
     }
 };
+
+export const analyzeSheetMusicImage = async (imageData: Part): Promise<any> => {
+    try {
+        const aiInstance = initializeAI();
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: {
+                parts: [
+                    imageData,
+                    { text: 'You are an expert musicologist. Analyze this image of sheet music and extract its key properties. Return a strict JSON object with keys: "noteSequence" (string of notes like "C4 D4 E4"), "rhythmDescription" (string), "bpm" (number, estimate if not present), "keySignature" (string), and "timeSignature" (string).' }
+                ]
+            },
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
+        const text = response.text;
+        if (!text) throw new Error("Could not read sheet music from image.");
+        return JSON.parse(text);
+    } catch (e) {
+        console.error("Error reading sheet music:", e);
+        throw new Error("Failed to analyze sheet music image.");
+    }
+};
+
+export const generateSheetMusicSVG = async (prompt: string, width: number): Promise<string> => {
+    try {
+        const aiInstance = initializeAI();
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `You are an expert at rendering musical notation using VexFlow. Given the following prompt, generate the complete, self-contained VexFlow JavaScript code needed to render it as an SVG. The code should create a renderer for an element with id "vexflow-output" and a specific width of ${width}. It must handle everything from factory setup to drawing. Do not include any HTML, CSS, or markdown, only the raw JavaScript code block. Prompt: "${prompt}"`,
+        });
+        const vexflowCode = response.text || '';
+        
+        // This is a placeholder for a more complex SVG generation service if needed.
+        // For now, we return a simple representation. This could be expanded.
+        const svgContent = `<svg width="${width}" height="150" xmlns="http://www.w3.org/2000/svg" class="bg-white p-2 rounded"><text x="10" y="20" font-family="monospace" font-size="10">VexFlow Render for: ${prompt.replace(/</g, "&lt;")}</text><script>${vexflowCode}</script></svg>`;
+        return svgContent;
+        
+    } catch (e) {
+        console.error("Error generating sheet music:", e);
+        throw new Error("Failed to generate sheet music SVG.");
+    }
+};
+
+export const findAndAnalyzeSheetMusic = async (query: string): Promise<any> => {
+    try {
+        const aiInstance = initializeAI();
+        const response = await aiInstance.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: `First, perform a Google search for: "${query}". Find the most accurate image of the sheet music from the results. Then, act as an expert musicologist, analyze that image and extract its key properties. Return a strict JSON object with keys: "noteSequence", "rhythmDescription", "bpm", "keySignature", and "timeSignature", and include a "sourceURL" key with the URL of the image you analyzed.`,
+            config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json"
+            },
+        });
+        const text = response.text;
+        if (!text) throw new Error("Could not find or analyze sheet music online.");
+        return JSON.parse(text);
+    } catch (e) {
+        console.error("Error finding/analyzing sheet music:", e);
+        throw new Error("Failed to find and analyze sheet music online.");
+    }
+};
+
 
 export const searchYouTubeVideos = async (query: string): Promise<YouTubeResult[]> => {
     try {

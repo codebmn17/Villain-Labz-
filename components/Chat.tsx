@@ -1,7 +1,8 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -125,8 +126,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
 
   useEffect(scrollToBottom, [messages]);
 
-  const addUIMessage = (sender: 'user' | 'ai', text: string, msgAttachments: ChatAttachment[] = [], audioTrack?: AudioPlaylistItem) => {
-    setMessages(prev => [...prev, { sender, text, attachments: msgAttachments, audioTrack }]);
+  const addUIMessage = (sender: 'user' | 'ai', text: string, msgAttachments: ChatAttachment[] = [], audioTrack?: AudioPlaylistItem, svgContent?: string) => {
+    setMessages(prev => [...prev, { sender, text, attachments: msgAttachments, audioTrack, svgContent }]);
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -245,6 +246,7 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
     try {
       let responseData;
       let generatedAudioTrack: AudioPlaylistItem | undefined;
+      let generatedSvgContent: string | undefined;
       
       if (currentAttachments.length > 0) {
           const parts: Part[] = [];
@@ -330,6 +332,47 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                     const errorMsg = e instanceof Error ? e.message : "Unknown analysis error";
                     result = { success: false, error: errorMsg };
                     executionResultText = `Failed to analyze audio: ${errorMsg}`;
+                }
+                break;
+             case 'readSheetMusic':
+                const imageAttachment = currentAttachments.find(a => a.mimeType.startsWith('image/'));
+                if (!imageAttachment || (!imageAttachment.data && !imageAttachment.fileUri)) {
+                    result = { success: false, error: "No image file attached for sheet music analysis." };
+                } else {
+                    addUIMessage('ai', 'Reading the attached sheet music...');
+                    const part: Part = imageAttachment.data 
+                        ? { inlineData: { mimeType: imageAttachment.mimeType, data: imageAttachment.data } }
+                        : { fileData: { mimeType: imageAttachment.mimeType, fileUri: imageAttachment.fileUri! }};
+                    try {
+                        const analysis = await analyzeSheetMusicImage(part);
+                        result = { success: true, analysis };
+                        executionResultText = `Analyzed sheet music. Found key: ${analysis.keySignature}, time: ${analysis.timeSignature}.`;
+                    } catch (e: any) {
+                        result = { success: false, error: e.message };
+                        executionResultText = `Failed to read sheet music: ${e.message}`;
+                    }
+                }
+                break;
+            case 'writeSheetMusic':
+                try {
+                    const svg = await generateSheetMusicSVG(args.prompt as string, (args.width as number) || 500);
+                    generatedSvgContent = svg;
+                    result = { success: true, svgRendered: true };
+                    executionResultText = 'I have written the sheet music as requested.';
+                } catch (e: any) {
+                    result = { success: false, error: e.message };
+                    executionResultText = `Failed to write sheet music: ${e.message}`;
+                }
+                break;
+            case 'findAndReadSheetMusicOnline':
+                 try {
+                    addUIMessage('ai', `Searching online for sheet music for "${args.query}"...`);
+                    const analysis = await findAndAnalyzeSheetMusic(args.query as string);
+                    result = { success: true, analysis };
+                    executionResultText = `Found and analyzed sheet music from ${analysis.sourceURL}. Key: ${analysis.keySignature}.`;
+                } catch (e: any) {
+                    result = { success: false, error: e.message };
+                    executionResultText = `Failed to find or read sheet music: ${e.message}`;
                 }
                 break;
             case 'generateOriginalMusic':
@@ -480,8 +523,8 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
         setAiHistory(newHistory);
       }
 
-      if (response.text) {
-        addUIMessage('ai', response.text, [], generatedAudioTrack);
+      if (response.text || generatedSvgContent) {
+        addUIMessage('ai', response.text || '', [], generatedAudioTrack, generatedSvgContent);
       }
 
     } catch (error) {
@@ -520,6 +563,9 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                       ))}
                   </div>
               )}
+               {msg.svgContent && (
+                  <div className="mt-2 bg-white rounded-lg p-2" dangerouslySetInnerHTML={{ __html: msg.svgContent }} />
+               )}
             </div>
             {msg.audioTrack && (
                 <div className="mt-2 w-full max-w-lg">

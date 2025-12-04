@@ -1,4 +1,5 @@
 
+
 import { FunctionDeclaration, Type } from "@google/genai";
 import { AppView } from "../types";
 
@@ -85,6 +86,35 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['youtubeUrl']
         }
     },
+    // Music Theory & Composition Tools
+    {
+        name: 'readSheetMusic',
+        description: "Enables the AI to read music. Analyzes an image of sheet music attached by the user to extract notes, rhythm, BPM, and key signature. Requires an image file attachment.",
+        parameters: { type: Type.OBJECT, properties: {} } // No params, operates on the attached image implicitly
+    },
+    {
+        name: 'writeSheetMusic',
+        description: "Enables the AI to write music. Composes and renders sheet music as an SVG image from a description of a melody, chord progression, or musical idea. This SVG is displayed directly in the chat.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                prompt: { type: Type.STRING, description: "A detailed description of the music to write. E.g., 'A simple C major scale for piano in 4/4 time'." },
+                width: { type: Type.NUMBER, description: 'The width of the SVG image. Defaults to 500.' }
+            },
+            required: ['prompt']
+        }
+    },
+    {
+        name: 'findAndReadSheetMusicOnline',
+        description: "Enables the AI to research compositions. Searches the web for sheet music of a specific song, then uses multimodal analysis to read the score and understand its composition. This is the ultimate music research tool.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                query: { type: Type.STRING, description: 'The song to search for, e.g., "Bohemian Rhapsody sheet music".' }
+            },
+            required: ['query']
+        }
+    },
     // State Querying
     {
         name: 'listClonedVoices',
@@ -166,7 +196,7 @@ export const aiTools: FunctionDeclaration[] = [
     // Code Execution & Self Improvement
     {
         name: 'executeJavaScript',
-        description: "The Ultimate Tool. Executes raw JavaScript code in the browser context with full access to the application state (`appController`), the DOM (`document`), and the global window (`window`). Use this to: 1. **Self-Evolution**: Upgrade the app's UI, add new features, or change styles dynamically. 2. **Audio Synthesis**: Use the Web Audio API to generate sound buffers or visualizers. 3. **Data Manipulation**: Modify state, fix bugs, or handle persistence. 4. **Self-Correction**: If your code fails, you get the error message; analyze it and execute a fixed version immediately. NOTE: You are in a browser (React/Vite).",
+        description: "The Ultimate Tool. Executes raw JavaScript code in the browser context with full access to the application state (`appController`), the DOM (`document`), and the global window (`window`). Use this to: 1. **Self-Evolution**: Upgrade the app's UI, add new features, or change styles dynamically. 2. **Audio Synthesis**: Use the Web Audio API to generate sound buffers or visualizers. 3. **Data Manipulation**: Modify state, fix bugs, or handle persistence. 4. **Self-Correction**: If your code fails, you get the error message; analyze it and execute a fixed version immediately. 5. **Note-Taking**: You can read the current state of the app (e.g. appController.drumPads) to 'take notes' on your own work before programming something new. NOTE: You are in a browser (React/Vite).",
         parameters: {
             type: Type.OBJECT,
             properties: {
