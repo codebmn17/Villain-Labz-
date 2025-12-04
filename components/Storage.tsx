@@ -1,17 +1,18 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { AudioPlaylistItem } from '../types';
+import React, { useState, useMemo } from 'react';
+import { AudioPlaylistItem, AppController } from '../types';
 import AudioPlayer from './AudioPlayer';
 import { TrashIcon } from './icons/TrashIcon';
 import { PencilIcon } from './icons/PencilIcon';
 import { deleteTrackFromDB, updateTrackInDB, clearAllTracksFromDB } from '../services/storageService';
+import { FacebookIcon } from './icons/FacebookIcon';
 
 interface StorageProps {
-  generatedTracks: AudioPlaylistItem[];
-  setGeneratedTracks: (tracks: AudioPlaylistItem[]) => void;
+  appController: AppController;
 }
 
-const Storage: React.FC<StorageProps> = ({ generatedTracks, setGeneratedTracks }) => {
+const Storage: React.FC<StorageProps> = ({ appController }) => {
+  const { generatedTracks, setGeneratedTracks, isFacebookConnected } = appController;
   const [editingTrack, setEditingTrack] = useState<AudioPlaylistItem | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name' | 'size'>('newest');
@@ -59,6 +60,13 @@ const Storage: React.FC<StorageProps> = ({ generatedTracks, setGeneratedTracks }
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleShareOnFacebook = (track: AudioPlaylistItem) => {
+    const shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}`;
+    const quote = `Check out this track I made with Villain Labz AI: "${track.title}" by ${track.artist}!`;
+    const fullUrl = `${shareUrl}&quote=${encodeURIComponent(quote)}`;
+    window.open(fullUrl, '_blank', 'noopener,noreferrer,width=600,height=400');
   };
 
   const handleDelete = async (trackId: string) => {
@@ -203,6 +211,16 @@ const Storage: React.FC<StorageProps> = ({ generatedTracks, setGeneratedTracks }
                         </div>
                       </div>
                       <div className="flex items-center space-x-2 flex-shrink-0">
+                        {isFacebookConnected && (
+                            <button
+                                onClick={() => handleShareOnFacebook(track)}
+                                className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-1 px-3 rounded-lg text-[10px] uppercase tracking-wider transition-colors flex items-center"
+                                aria-label={`Share ${track.title} on Facebook`}
+                            >
+                                <FacebookIcon className="h-3 w-3 mr-1" />
+                                Share
+                            </button>
+                        )}
                         <button
                           onClick={() => handleDownload(track, 'wav')}
                           className="bg-gray-800 hover:bg-gray-500 text-white font-bold py-1 px-3 rounded-lg text-[10px] uppercase tracking-wider transition-colors"

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult } from '../types';
+import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel, YouTubeResult, SongArrangement, SequencerPattern } from '../types';
 import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis, generateSequencerPatternFromPrompt } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part, FunctionCall } from '@google/genai';
@@ -45,373 +45,366 @@ async function playEncodedAudio(base64String: string) {
         source.buffer = buffer;
         source.connect(audioContext.destination);
         source.start();
-
     } catch (e) {
-        console.error("Failed to play encoded audio", e);
+        console.error("Failed to decode and play audio:", e);
     }
 }
 
+
 const Chat: React.FC<ChatProps> = ({ appController }) => {
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [aiHistory, setAiHistory] = useState<Content[]>([]);
-  const [userInput, setUserInput] = useState('');
-  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const { activeModel, customModelName, isAiVoiceEnabled, setIsAiVoiceEnabled } = appController;
-
-  const aiName = activeModel === 'gemini' ? 'DJ Gemini' 
-               : activeModel === 'openai' ? 'DJ OpenAI'
-               : activeModel === 'claude' ? 'DJ Claude'
-               : activeModel === 'ninja' ? 'DJ Ninja'
-               : customModelName;
-
-  useEffect(() => {
-    try {
-      const savedUiHistory = localStorage.getItem(UI_HISTORY_KEY);
-      const savedAiHistory = localStorage.getItem(AI_HISTORY_KEY);
-      if (savedUiHistory) setChatHistory(JSON.parse(savedUiHistory));
-      if (savedAiHistory) setAiHistory(JSON.parse(savedAiHistory));
-    } catch (e) { console.error("Failed to load chat history:", e); }
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem(UI_HISTORY_KEY, JSON.stringify(chatHistory));
-    localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(aiHistory));
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatHistory, aiHistory]);
-
-  const fileToBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve((reader.result as string).split(',')[1]);
-    reader.onerror = error => reject(error);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const saved = localStorage.getItem(UI_HISTORY_KEY);
+    return saved ? JSON.parse(saved) : [];
   });
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  
+  // FIX: useRef does not take a lazy initializer. The value is initialized directly.
+  const aiHistory = useRef<Content[]>(
+    JSON.parse(localStorage.getItem(AI_HISTORY_KEY) || '[]')
+  );
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files) return;
+  const {
+    setCurrentView, setElevenLabsKey, setOpenAIKey, setClaudeKey, setNinjaKey, setIsDjActive, setClonedVoices,
+    clonedVoices, isDjActive, setGeneratedTracks, generatedTracks,
+    drumPads, setDrumPads, activeModel, isAiVoiceEnabled, setIsAiVoiceEnabled,
+    setCodeLabContent, setRunCodeLabTrigger, setReverbMix, setReverbDecay,
+    setBpm, setSequencerGrid, savedPatterns, savedArrangements, setSavedArrangements,
+  } = appController;
 
-    const newAttachments: ChatAttachment[] = Array.from(files).map((file: File) => ({
+
+  useEffect(() => {
+    localStorage.setItem(UI_HISTORY_KEY, JSON.stringify(messages));
+    localStorage.setItem(AI_HISTORY_KEY, JSON.stringify(aiHistory.current));
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files) {
+      const newFiles = Array.from(event.target.files).map((file: File) => ({
         name: file.name,
         mimeType: file.type,
         isUploading: true,
         originalFile: file,
-    }));
-    
-    setAttachments(prev => [...prev, ...newAttachments]);
+      }));
+      setAttachments(prev => [...prev, ...newFiles]);
 
-    await Promise.all(newAttachments.map(async (attachment) => {
+      newFiles.forEach(async (attachment, index) => {
+        const file = attachment.originalFile;
+        if (!file) return;
+
         try {
-            if (attachment.originalFile!.size < MAX_BASE64_SIZE) {
-              attachment.data = await fileToBase64(attachment.originalFile!);
+            if (file.size < MAX_BASE64_SIZE) {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    setAttachments(prev => prev.map(a => a === attachment ? { ...a, data: base64, isUploading: false } : a));
+                };
+                reader.readAsDataURL(file);
             } else {
-              attachment.fileUri = await uploadFileToGemini(attachment.originalFile!);
+                // For large files, get a URI. In a real app, this would be an actual upload.
+                const uri = await uploadFileToGemini(file);
+                setAttachments(prev => prev.map(a => a === attachment ? { ...a, fileUri: uri, isUploading: false } : a));
             }
-            attachment.isUploading = false;
-        } catch (e) {
-            console.error("Upload failed", e);
-            attachment.error = 'Upload failed';
-            attachment.isUploading = false;
+        } catch (error) {
+            console.error("File processing error:", error);
+            setAttachments(prev => prev.map(a => a === attachment ? { ...a, error: 'Upload failed', isUploading: false } : a));
         }
-    }));
-    setAttachments(prev => [...prev]); // Trigger re-render to update status
-  };
-
-  const removeAttachment = (index: number) => {
-    setAttachments(prev => prev.filter((_, i) => i !== index));
-  };
-  
-  const handleSend = async () => {
-    if (!userInput.trim() && attachments.length === 0) return;
-
-    setIsLoading(true);
-    const userMessage: ChatMessage = { sender: 'user', text: userInput, attachments };
-    setChatHistory(prev => [...prev, userMessage]);
-    
-    const messageParts: Part[] = [{ text: userInput }];
-    for (const attachment of attachments) {
-      if (attachment.data) {
-        messageParts.push({ inlineData: { mimeType: attachment.mimeType, data: attachment.data } });
-      } else if (attachment.fileUri) {
-        messageParts.push({ fileData: { mimeType: attachment.mimeType, fileUri: attachment.fileUri } });
-      }
+      });
     }
-    
-    setUserInput('');
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() && attachments.length === 0) return;
+
+    const userMessage: ChatMessage = {
+      sender: 'user',
+      text: input,
+      attachments: attachments.filter(a => !a.isUploading && !a.error),
+    };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
     setAttachments([]);
+    setIsLoading(true);
+
+    const parts: Part[] = [{ text: input }];
+    userMessage.attachments?.forEach(att => {
+        if (att.data) {
+            parts.push({ inlineData: { mimeType: att.mimeType, data: att.data } });
+        } else if (att.fileUri) {
+            parts.push({ fileData: { mimeType: att.mimeType, fileUri: att.fileUri } });
+        }
+    });
 
     try {
-      let result = await sendMessageToAI(messageParts, aiHistory, activeModel);
-      let functionCalls: FunctionCall[] | undefined = result.response.functionCalls;
-      let newHistory = result.newHistory;
+        let result = await sendMessageToAI(parts, aiHistory.current, activeModel);
+        aiHistory.current = result.newHistory;
+        let response = result.response;
+        
+        let functionCalls: FunctionCall[] | undefined = response.functionCalls;
+        
+        while (functionCalls && functionCalls.length > 0) {
+            const toolResponses: FunctionResponse[] = [];
 
-      while (functionCalls) {
-        const toolResponses: FunctionResponse[] = [];
-        const toolCallMessages: ChatMessage[] = [];
+            for (const call of functionCalls) {
+                let toolResult: any = { error: `Tool ${call.name} not found or failed.` };
+                const args = call.args;
+                
+                try {
+                    switch (call.name) {
+                        case 'navigateTo': 
+                            setCurrentView(args.view as AppView);
+                            toolResult = { success: true, message: `Navigated to ${args.view}.` };
+                            break;
+                        case 'cloneVoice': {
+                            const audioAttachment = userMessage.attachments?.[0];
+                            if (audioAttachment?.originalFile) {
+                                const newVoice = await addVoice(args.name as string, args.description as string, [audioAttachment.originalFile], appController.elevenLabsKey);
+                                setClonedVoices([...clonedVoices, newVoice]);
+                                toolResult = { success: true, voiceId: newVoice.id, message: `Voice "${newVoice.name}" cloned.` };
+                            } else {
+                                toolResult = { error: "Audio file attachment is required to clone a voice." };
+                            }
+                            break;
+                        }
+                        case 'listClonedVoices':
+                            toolResult = clonedVoices.map(({ id, name, description }) => ({ id, name, description }));
+                            break;
+                        case 'listGeneratedTracks':
+                            toolResult = generatedTracks.map(({ id, title, artist }) => ({ id, title, artist }));
+                            break;
+                        case 'deleteGeneratedTrack': {
+                            await deleteTrackFromDB(args.trackId as string);
+                            setGeneratedTracks(generatedTracks.filter(t => t.id !== args.trackId));
+                            toolResult = { success: true, message: `Track ${args.trackId} deleted.` };
+                            break;
+                        }
+                        case 'setElevenLabsApiKey': setElevenLabsKey(args.apiKey as string); toolResult = { success: true }; break;
+                        case 'setOpenAIApiKey': setOpenAIKey(args.apiKey as string); toolResult = { success: true }; break;
+                        case 'setClaudeApiKey': setClaudeKey(args.apiKey as string); toolResult = { success: true }; break;
+                        case 'setNinjaApiKey': setNinjaKey(args.apiKey as string); toolResult = { success: true }; break;
+                        case 'setDjMode': setIsDjActive(args.isActive as boolean); toolResult = { success: true, status: args.isActive ? 'activated' : 'deactivated' }; break;
+                        case 'speak': {
+                            const audioBase64 = await generateSpeech(args.text as string, args.voiceName as string);
+                            if (audioBase64) {
+                                playEncodedAudio(audioBase64);
+                                toolResult = { success: true, message: "Speech synthesized and played." };
+                            } else {
+                                toolResult = { error: "Failed to synthesize speech." };
+                            }
+                            break;
+                        }
+                        case 'executeJavaScript':
+                           try {
+                                const F = new Function('appController', 'window', 'document', args.code as string);
+                                const result = F(appController, window, document);
+                                toolResult = { success: true, result: JSON.stringify(result) || 'Code executed.' };
+                           } catch (e: any) {
+                               toolResult = { error: e.message };
+                           }
+                           break;
+                        case 'configureDrumPad': {
+                            const { padId, ...config } = args;
+                            const newPads = drumPads.map(p => p.id === padId ? { ...p, ...config } as DrumPadConfig : p);
+                            setDrumPads(newPads);
+                            toolResult = { success: true, message: `Pad ${padId} configured.` };
+                            break;
+                        }
+                        case 'setDrumMachineEffects': {
+                            if (typeof args.reverbMix === 'number') setReverbMix(args.reverbMix as number);
+                            if (typeof args.reverbDecay === 'number') setReverbDecay(args.reverbDecay as number);
+                            toolResult = { success: true, message: 'Drum machine effects updated.' };
+                            break;
+                        }
+                        case 'searchYouTube':
+                            toolResult = await searchYouTubeVideos(args.query as string);
+                            break;
+                        case 'analyzeYouTubeAudio':
+                            toolResult = await analyzeYouTubeAudio(args.youtubeUrl as string);
+                            break;
+                        case 'analyzeBassCharacteristics': {
+                            const audioAttachment = attachments.find(a => a.name === args.audioAttachmentName);
+                            const audioPart = audioAttachment?.data ? { inlineData: { mimeType: audioAttachment.mimeType, data: audioAttachment.data } } : undefined;
+                            toolResult = await performBassAnalysis({
+                                youtubeUrl: args.youtubeUrl as string,
+                                textDescription: args.textDescription as string,
+                                audioAttachment: audioPart,
+                            });
+                            break;
+                        }
+                        case 'readSheetMusic': {
+                            const imageAttachment = attachments.find(a => a.mimeType.startsWith('image/'));
+                            if (imageAttachment?.data) {
+                                toolResult = await analyzeSheetMusicImage({ inlineData: { mimeType: imageAttachment.mimeType, data: imageAttachment.data } });
+                            } else {
+                                toolResult = { error: 'An image attachment is required.' };
+                            }
+                            break;
+                        }
+                        case 'writeSheetMusic':
+                            toolResult = await generateSheetMusicSVG(args.prompt as string, args.width as number);
+                            break;
+                        case 'findAndReadSheetMusicOnline':
+                            toolResult = await findAndAnalyzeSheetMusic(args.query as string);
+                            break;
+                        case 'updateCodeLab':
+                            setCodeLabContent(args.code as string);
+                            toolResult = { success: true, message: 'Code lab updated.' };
+                            break;
+                        case 'runCodeLab':
+                            setRunCodeLabTrigger(prev => prev + 1);
+                            toolResult = { success: true, message: 'Code lab execution triggered.' };
+                            break;
+                        case 'generateSequencerPattern': {
+                            const pattern = await generateSequencerPatternFromPrompt(args.prompt as string, drumPads);
+                            setSequencerGrid(pattern.grid);
+                            setBpm(pattern.bpm);
+                            toolResult = { success: true, message: `Sequencer pattern generated at ${pattern.bpm} BPM.` };
+                            break;
+                        }
+                        case 'listSequencerPatterns':
+                            toolResult = savedPatterns.map(p => ({ id: p.id, name: p.name, bpm: p.bpm }));
+                            break;
+                        case 'createSongArrangement': {
+                            const newArrangement: SongArrangement = {
+                                id: Date.now().toString(),
+                                name: args.name as string,
+                                sections: args.sections as any[],
+                            };
+                            const updatedArrangements = [...savedArrangements, newArrangement];
+                            setSavedArrangements(updatedArrangements);
+                             localStorage.setItem('villain_song_arrangements', JSON.stringify(updatedArrangements));
+                            toolResult = { success: true, message: `Song arrangement '${newArrangement.name}' created.` };
+                            break;
+                        }
 
-        for (const call of functionCalls) {
-            let responsePayload: any = { error: `Tool ${call.name} not implemented or failed.` };
-            
-            try {
-                switch (call.name) {
-                    // TOOL IMPLEMENTATIONS
-                    case 'navigateTo':
-                        appController.setCurrentView(call.args.view as AppView);
-                        responsePayload = { success: true, view: call.args.view };
-                        break;
-                    case 'generateOriginalMusic': {
-                        const { lyrics, style, bpm, voiceId } = call.args;
-                        appController.setCurrentView(AppView.Studio); // Navigate to show progress
-                        const audioUrl = await elevenLabsGenerate(lyrics as string, appController.elevenLabsKey, voiceId as string);
-                        const newTrack = { id: Date.now().toString(), src: audioUrl, title: `Original - ${style}`, artist: 'Villain Labz' };
-                        await saveTrackToDB(newTrack);
-                        appController.setGeneratedTracks([newTrack, ...appController.generatedTracks]);
-                        responsePayload = { success: true, trackId: newTrack.id };
-                        break;
                     }
-                    case 'generateCoverSong': {
-                        const { originalTitle, originalArtist, style, voiceId, adaptLyrics } = call.args;
-                        appController.setCurrentView(AppView.Studio);
-                        const lyrics = adaptLyrics 
-                            ? await researchAndAdaptSong(originalTitle as string, originalArtist as string, style as string)
-                            : await findSongLyrics(originalTitle as string, originalArtist as string);
-                        const audioUrl = await elevenLabsGenerate(lyrics, appController.elevenLabsKey, voiceId as string);
-                        const newTrack = { id: Date.now().toString(), src: audioUrl, title: `${originalTitle} (Cover)`, artist: `${originalArtist} ft. AI` };
-                        await saveTrackToDB(newTrack);
-                        appController.setGeneratedTracks([newTrack, ...appController.generatedTracks]);
-                        responsePayload = { success: true, trackId: newTrack.id };
-                        break;
-                    }
-                     case 'cloneVoice': {
-                        const audioAttachment = attachments.find(a => a.mimeType.startsWith('audio/'));
-                        if (!audioAttachment?.originalFile) throw new Error("Audio file attachment is required to clone a voice.");
-                        const { name, description } = call.args;
-                        const newVoice = await addVoice(name as string, description as string, [audioAttachment.originalFile], appController.elevenLabsKey);
-                        appController.setClonedVoices([newVoice, ...appController.clonedVoices]);
-                        responsePayload = { success: true, voice: newVoice };
-                        break;
-                    }
-                    case 'searchYouTube': {
-                        const videos = await searchYouTubeVideos(call.args.query as string);
-                        responsePayload = { videos };
-                        break;
-                    }
-                    case 'analyzeYouTubeAudio': {
-                        const analysis = await analyzeYouTubeAudio(call.args.youtubeUrl as string);
-                        responsePayload = analysis;
-                        break;
-                    }
-                    case 'analyzeBassCharacteristics': {
-                        const { youtubeUrl, audioAttachmentName, textDescription } = call.args;
-                        const audioAttachment = attachments.find(a => a.name === audioAttachmentName);
-                        let audioPart: Part | undefined;
-                        if (audioAttachment?.data) {
-                           audioPart = { inlineData: { mimeType: audioAttachment.mimeType, data: audioAttachment.data } };
-                        }
-                        const analysis = await performBassAnalysis({ youtubeUrl: youtubeUrl as string, textDescription: textDescription as string, audioAttachment: audioPart });
-                        responsePayload = analysis;
-                        break;
-                    }
-                    case 'readSheetMusic': {
-                        const imageAttachment = attachments.find(a => a.mimeType.startsWith('image/'));
-                        if (!imageAttachment?.data) throw new Error("Image attachment of sheet music is required.");
-                        const analysis = await analyzeSheetMusicImage({ inlineData: { mimeType: imageAttachment.mimeType, data: imageAttachment.data } });
-                        responsePayload = analysis;
-                        break;
-                    }
-                    case 'writeSheetMusic': {
-                        const { prompt, width } = call.args;
-                        const svg = await generateSheetMusicSVG(prompt as string, width as number || 500);
-                        responsePayload = { success: true, svgContent: svg };
-                        // Display SVG in a new message
-                        toolCallMessages.push({ sender: 'ai', text: `Here is the sheet music for "${prompt}":`, svgContent: svg });
-                        break;
-                    }
-                    case 'findAndReadSheetMusicOnline': {
-                        const analysis = await findAndAnalyzeSheetMusic(call.args.query as string);
-                        responsePayload = analysis;
-                        break;
-                    }
-                    case 'listClonedVoices':
-                        responsePayload = { voices: appController.clonedVoices };
-                        break;
-                    case 'listGeneratedTracks':
-                        responsePayload = { tracks: appController.generatedTracks };
-                        break;
-                    case 'deleteGeneratedTrack':
-                        await deleteTrackFromDB(call.args.trackId as string);
-                        appController.setGeneratedTracks(appController.generatedTracks.filter(t => t.id !== call.args.trackId));
-                        responsePayload = { success: true, trackId: call.args.trackId };
-                        break;
-                    case 'setElevenLabsApiKey': appController.setElevenLabsKey(call.args.apiKey as string); responsePayload = { success: true }; break;
-                    case 'setOpenAIApiKey': appController.setOpenAIKey(call.args.apiKey as string); responsePayload = { success: true }; break;
-                    case 'setClaudeApiKey': appController.setClaudeKey(call.args.apiKey as string); responsePayload = { success: true }; break;
-                    case 'setNinjaApiKey': appController.setNinjaKey(call.args.apiKey as string); responsePayload = { success: true }; break;
-                    case 'setDjMode': appController.setIsDjActive(call.args.isActive as boolean); responsePayload = { success: true, status: call.args.isActive }; break;
-                    case 'executeJavaScript':
-                        try {
-                            const result = new Function('appController', 'window', 'document', call.args.code as string)(appController, window, document);
-                            responsePayload = { success: true, result: result ? String(result) : 'OK' };
-                        } catch (e: any) {
-                            responsePayload = { success: false, error: e.message, stack: e.stack };
-                        }
-                        break;
-                    case 'speak': {
-                        const audioData = await generateSpeech(call.args.text as string, call.args.voiceName as string);
-                        if (audioData) await playEncodedAudio(audioData);
-                        responsePayload = { success: true };
-                        break;
-                    }
-                    case 'configureDrumPad': {
-                        const newPads = [...appController.drumPads];
-                        const padIndex = newPads.findIndex(p => p.id === call.args.padId);
-                        if (padIndex !== -1) {
-                            newPads[padIndex] = { ...newPads[padIndex], ...call.args };
-                            appController.setDrumPads(newPads);
-                            responsePayload = { success: true, updatedPad: newPads[padIndex] };
-                        } else {
-                            throw new Error(`Pad with ID ${call.args.padId} not found.`);
-                        }
-                        break;
-                    }
-                     case 'setDrumMachineEffects': {
-                        if (typeof call.args.reverbMix === 'number') appController.setReverbMix(call.args.reverbMix);
-                        if (typeof call.args.reverbDecay === 'number') appController.setReverbDecay(call.args.reverbDecay);
-                        responsePayload = { success: true };
-                        break;
-                    }
-                    case 'generateSequencerPattern': {
-                        const { grid, bpm } = await generateSequencerPatternFromPrompt(call.args.prompt as string, appController.drumPads);
-                        appController.setSequencerGrid(grid);
-                        appController.setBpm(bpm);
-                        appController.setCurrentView(AppView.DrumMachine);
-                        responsePayload = { success: true, message: `Generated a pattern and set BPM to ${bpm}. Navigating to Drum Machine.` };
-                        break;
-                    }
+                } catch (e: any) {
+                    console.error(`Error executing tool ${call.name}:`, e);
+                    toolResult = { error: e.message || 'An unknown error occurred.' };
                 }
-            } catch (e: any) {
-                responsePayload = { error: e.message };
+
+                toolResponses.push({
+                    name: call.name,
+                    response: { result: JSON.stringify(toolResult) }
+                });
             }
+            
+            result = await sendMessageToAI(toolResponses, aiHistory.current, activeModel);
+            aiHistory.current = result.newHistory;
+            response = result.response;
+            functionCalls = response.functionCalls;
+        }
 
-            toolResponses.push({
-                name: call.name,
-                response: responsePayload,
-            });
+        const aiText = response.text || "I'm not sure how to respond to that.";
+        const aiMessage: ChatMessage = { sender: 'ai', text: aiText };
+
+        // Check for special content types in the final response
+        if (response.candidates && response.candidates[0].content.parts.length > 1) {
+            const lastPart = response.candidates[0].content.parts[response.candidates[0].content.parts.length-1];
+            // This is a simple heuristic; might need refinement
+            if (typeof lastPart.text === 'string' && lastPart.text.trim().startsWith('<svg')) {
+                 aiMessage.svgContent = lastPart.text.trim();
+            }
         }
         
-        if (toolCallMessages.length > 0) {
-            setChatHistory(prev => [...prev, ...toolCallMessages]);
-        }
+        setMessages(prev => [...prev, aiMessage]);
         
-        const toolResult = await sendMessageToAI(toolResponses, newHistory, activeModel);
-        functionCalls = toolResult.response.functionCalls;
-        newHistory = toolResult.newHistory;
-        result = toolResult;
-      }
+        if (isAiVoiceEnabled) {
+            const audioBase64 = await generateSpeech(aiText);
+            if (audioBase64) playEncodedAudio(audioBase64);
+        }
 
-      const aiResponseText = result.response.text;
-      const aiMessage: ChatMessage = { sender: 'ai', text: aiResponseText || '' };
-      setChatHistory(prev => [...prev, aiMessage]);
-      setAiHistory(result.newHistory);
-
-      // Grand Finale: Speak the response
-      if (isAiVoiceEnabled && aiResponseText) {
-          try {
-              if (appController.elevenLabsKey) {
-                  // Use high-quality ElevenLabs voice if available
-                  const voiceId = appController.clonedVoices.length > 0 ? appController.clonedVoices[0].id : undefined;
-                  const audioUrl = await elevenLabsGenerate(aiResponseText, appController.elevenLabsKey, voiceId);
-                  const audio = new Audio(audioUrl);
-                  audio.play();
-              } else {
-                  // Fallback to built-in TTS
-                  const audioData = await generateSpeech(aiResponseText);
-                  if (audioData) await playEncodedAudio(audioData);
-              }
-          } catch (speechError) {
-              console.error("Failed to generate or play speech:", speechError);
-          }
-      }
-
-    } catch (e) {
-      console.error(e);
-      const errorMessage: ChatMessage = { sender: 'ai', text: `An error occurred: ${e instanceof Error ? e.message : String(e)}` };
-      setChatHistory(prev => [...prev, errorMessage]);
+    } catch (error) {
+        console.error('Error sending message to AI:', error);
+        setMessages(prev => [...prev, { sender: 'ai', text: 'Sorry, I encountered an error. Please try again.' }]);
     } finally {
-      setIsLoading(false);
+        setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-gray-800 rounded-xl shadow-2xl animate-fade-in">
-      <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-        <div>
-            <h2 className="text-xl font-bold text-purple-400">{aiName}</h2>
-            <p className="text-xs text-gray-400">Your creative AI partner. Type a message or attach a file.</p>
-        </div>
-        <button
-            onClick={() => setIsAiVoiceEnabled(!isAiVoiceEnabled)}
-            className="p-2 rounded-full hover:bg-gray-700 transition-colors"
-            title={isAiVoiceEnabled ? "Disable AI Voice" : "Enable AI Voice"}
+    <div className="bg-gray-800 p-2 sm:p-4 rounded-xl shadow-2xl animate-fade-in h-full flex flex-col">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold text-purple-400">
+          DJ {
+            activeModel === 'gemini' ? 'Gemini' :
+            activeModel === 'openai' ? 'OpenAI' :
+            activeModel === 'claude' ? 'Claude' :
+            activeModel === 'ninja' ? 'Ninja' :
+            appController.customModelName
+          }
+        </h2>
+        <button 
+          onClick={() => setIsAiVoiceEnabled(!isAiVoiceEnabled)}
+          className="p-2 rounded-full hover:bg-gray-700 transition-colors"
+          title={isAiVoiceEnabled ? "Mute AI Voice" : "Unmute AI Voice"}
         >
             {isAiVoiceEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {chatHistory.map((msg, index) => (
-          <div key={index} className={`flex items-start gap-3 ${msg.sender === 'user' ? 'justify-end' : ''}`}>
-            {msg.sender === 'ai' && <div className="w-8 h-8 rounded-full bg-purple-600 flex-shrink-0"></div>}
-            <div className={`max-w-lg p-3 rounded-lg ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
+
+      <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+        {messages.map((msg, index) => (
+          <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`p-3 rounded-2xl max-w-sm sm:max-w-md md:max-w-lg ${msg.sender === 'user' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-200'}`}>
               <p className="whitespace-pre-wrap">{msg.text}</p>
-              {msg.svgContent && <div dangerouslySetInnerHTML={{ __html: msg.svgContent }} className="mt-2 bg-white p-2 rounded" />}
               {msg.attachments && msg.attachments.length > 0 && (
-                <div className="mt-2 space-y-2">
-                  {msg.attachments.map((att, i) => (
-                    <div key={i} className="bg-purple-700/50 p-2 rounded-md text-sm">Attached: {att.name}</div>
-                  ))}
-                </div>
+                  <div className="mt-2 border-t border-white/20 pt-2">
+                    {msg.attachments.map((att, i) => (
+                        <div key={i} className="text-xs text-purple-200/80">{att.name}</div>
+                    ))}
+                  </div>
               )}
+               {msg.svgContent && (
+                    <div className="mt-2 p-2 bg-white rounded-lg" dangerouslySetInnerHTML={{ __html: msg.svgContent }} />
+                )}
             </div>
           </div>
         ))}
-        <div ref={messagesEndRef} />
+        {isLoading && (
+            <div className="flex justify-start">
+                <div className="p-3 rounded-2xl bg-gray-700 text-gray-200 flex items-center space-x-2">
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-0"></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-200"></div>
+                    <div className="w-2 h-2 bg-purple-400 rounded-full animate-pulse delay-400"></div>
+                </div>
+            </div>
+        )}
+        <div ref={chatEndRef} />
       </div>
 
-      <div className="p-4 border-t border-gray-700">
+      <div className="mt-4">
         {attachments.length > 0 && (
-          <div className="mb-2 grid grid-cols-2 md:grid-cols-4 gap-2">
+          <div className="p-2 bg-gray-700/50 rounded-lg mb-2 flex flex-wrap gap-2">
             {attachments.map((att, i) => (
-              <div key={i} className="bg-gray-700 p-2 rounded-md text-xs relative overflow-hidden">
-                <p className="text-white truncate">{att.name}</p>
-                {att.isUploading && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div></div>}
-                {att.error && <p className="text-red-400">{att.error}</p>}
-                <button onClick={() => removeAttachment(i)} className="absolute top-1 right-1 text-gray-400 hover:text-white">×</button>
+              <div key={i} className="bg-gray-800 px-2 py-1 rounded-md text-xs flex items-center">
+                <span className="text-purple-300 truncate max-w-xs">{att.name}</span>
+                {att.isUploading && <div className="ml-2 w-3 h-3 border-2 border-purple-300 border-t-transparent rounded-full animate-spin"></div>}
+                {att.error && <span className="ml-2 text-red-400">Error</span>}
+                <button onClick={() => setAttachments(prev => prev.filter(a => a !== att))} className="ml-2 text-gray-500 hover:text-red-400">&times;</button>
               </div>
             ))}
           </div>
         )}
 
-        <div className="flex items-center bg-gray-700 rounded-lg p-2">
-          <button onClick={() => fileInputRef.current?.click()} className="p-2 text-gray-400 hover:text-white">
+        <div className="flex items-center bg-gray-700 rounded-xl p-2">
+          <label htmlFor="file-upload" className="p-2 text-gray-400 hover:text-purple-400 cursor-pointer">
             <PaperClipIcon />
-          </button>
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} multiple className="hidden" />
+            <input id="file-upload" type="file" multiple className="hidden" onChange={handleFileUpload} />
+          </label>
           <input
             type="text"
-            value={userInput}
-            onChange={(e) => setUserInput(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleSend()}
-            placeholder="Type your message..."
+            placeholder="Ask DJ anything..."
             className="flex-1 bg-transparent border-none text-white placeholder-gray-400 focus:ring-0"
             disabled={isLoading}
           />
-          <button
-            onClick={handleSend}
-            disabled={isLoading}
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-md transition-colors disabled:opacity-50"
-          >
+          <button onClick={handleSend} disabled={isLoading} className="bg-purple-600 text-white font-bold py-2 px-5 rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50">
             {isLoading ? '...' : 'Send'}
           </button>
         </div>

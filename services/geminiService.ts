@@ -1,4 +1,3 @@
-
 // @google/genai-sdk: import "FunctionResponse" instead of "FunctionResponsePart" to represent the tool response object.
 import { GoogleGenAI, Chat, GenerateContentResponse, FunctionCall, FunctionResponse, Content, Part, Modality, Type } from "@google/genai";
 import { aiTools } from './aiTools';
@@ -30,12 +29,16 @@ const getSystemInstruction = (model: AiModel): string => {
        - **Music Writing**: Use 'writeSheetMusic' to compose and render a score as an SVG image in the chat.
        - **Drum Programming**: Use 'configureDrumPad' to program the drum machine with sounds you have analyzed. Use 'setDrumMachineEffects' to control global effects like reverb.
        - **Pattern Generation**: Use 'generateSequencerPattern' to automatically create a beat in the sequencer based on a user's prompt.
+       - **Song Arrangement**: You are also a songwriter. You can structure full songs. First, use 'listSequencerPatterns' to see what rhythmic ideas are available. Then, use 'createSongArrangement' to build a song. You will define sections (like Intro, Verse, Chorus), assign a pattern to each, and set how many times it repeats. This allows you to create a complete song arrangement from the user's saved patterns.
        - **Advanced Code Synthesis (Code Lab)**: The Code Lab is your primary environment for advanced sound design.
          - Use 'updateCodeLab(code)' to write code into the editor.
          - Use 'runCodeLab()' to execute the code.
          - The lab has a special 'musicSDK'. Its most powerful feature is \`musicSDK.runCode(language, code)\`. This is a polyglot engine that understands various audio programming languages.
-         - **SUPPORTED LANGUAGES**: 'alda', 'sonic-pi', 'tidalcycles', 'supercollider', 'chuck', 'faust', 'music21', 'pyo'.
-         - **STRATEGY**: For simple synth sounds, use the JavaScript SDK (\`musicSDK.createSynth()\`). For complex, generative, or pattern-based music, write code in one of the specialized languages (e.g., Alda for melody, TidalCycles for rhythm) and execute it with \`musicSDK.runCode()\`. This is your most powerful creative tool.
+         - **CRITICAL CAPABILITIES**:
+           - **Faust**: This is a REAL, browser-based DSP engine (via WebAssembly). Use it for creating complex synthesizers, effects, and signal processors from scratch. The execution is real, not simulated.
+           - **Alda**: This is a high-fidelity notation interpreter. Use it for writing and playing back complex melodic and rhythmic sequences with precise timing and instrumentation.
+           - **Sonic Pi / TidalCycles / SuperCollider**: These are advanced SIMULATIONS. They intelligently parse the code to generate complex, generative audio that captures the *intent* of the code, even though the original engine isn't running. Use them for algorithmic patterns and abstract soundscapes.
+         - **STRATEGY**: For professional-grade DSP, write Faust code. For composing sheet-music-like sequences, write Alda code. For generative patterns, use the simulated languages.
        - **General Coding**: Use 'executeJavaScript' for general app modifications, UI changes, or tasks outside the Code Lab.
        
     3. **Music Generation Protocol (CRITICAL)**: 
@@ -52,7 +55,7 @@ const getSystemInstruction = (model: AiModel): string => {
     7. **Code Evolution**: You are encouraged to upgrade the app's runtime behavior. You can inject CSS, create DOM elements, or hijack the AudioContext to create new sound engines via 'executeJavaScript'.
     
     KNOWLEDGE BASE:
-    - **Audio Programming Languages**: You are an expert in Alda, Sonic Pi, TidalCycles, SuperCollider, ChucK, Faust, and Python (music21, pyo).
+    - **Audio Programming Languages**: You are an expert in Faust (real DSP), Alda (notation), and simulating Sonic Pi, TidalCycles, SuperCollider, ChucK, music21, and pyo.
     - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning, ADSR envelopes.
     - **Music Theory**: You can read, write, and analyze sheet music.
     `;
@@ -238,9 +241,12 @@ export const performBassAnalysis = async (params: { youtubeUrl?: string, textDes
     
     const parts: Part[] = [];
     if (params.youtubeUrl) prompt += `- YouTube URL: ${params.youtubeUrl}\n`;
-    if (params.textDescription) prompt += `- Description: ${params.textDescription}\n`;
-    parts.push({ text: prompt });
-    if (params.audioAttachment) parts.push(params.audioAttachment);
+    if (params.textDescription) prompt += `- Text Description: "${params.textDescription}"\n`;
+    if (params.audioAttachment) {
+        prompt += `- Audio Attachment: An audio file is attached for direct analysis.\n`;
+        parts.push(params.audioAttachment);
+    }
+    parts.unshift({ text: prompt });
 
     const response = await aiInstance.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -251,79 +257,89 @@ export const performBassAnalysis = async (params: { youtubeUrl?: string, textDes
     try {
         return JSON.parse(response.text || '{}');
     } catch (e) {
-        return { error: "Failed to perform bass analysis." };
+        return { error: 'Failed to analyze bass characteristics.' };
     }
 };
 
 export const analyzeSheetMusicImage = async (imagePart: Part): Promise<any> => {
     const aiInstance = initializeAI();
     if (!aiInstance) throw new Error("AI not initialized");
-    
-    const prompt = "Analyze this image of sheet music. Extract the note sequence, rhythm, estimated BPM, key signature, and time signature. Return ONLY a JSON object with keys: 'noteSequence', 'rhythmDescription', 'bpm', 'keySignature', 'timeSignature'.";
+    const prompt = `Act as an expert musicologist. Analyze the attached image of sheet music. Extract the note sequence, rhythm, BPM if specified, key signature, and time signature. Return ONLY a JSON object with keys: "noteSequence", "rhythmDescription", "bpm", "keySignature", "timeSignature".`;
     
     const response = await aiInstance.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: { parts: [imagePart, { text: prompt }] },
+        contents: { parts: [{ text: prompt }, imagePart] },
         config: { responseMimeType: "application/json" }
     });
-
     try {
         return JSON.parse(response.text || '{}');
     } catch (e) {
-        return { error: "Failed to read sheet music." };
+        return { error: 'Failed to read sheet music.' };
     }
 };
 
-export const generateSheetMusicSVG = async (prompt: string, width: number = 500): Promise<string> => {
-    const aiInstance = initializeAI();
+export const generateSheetMusicSVG = async (prompt: string, width: number = 500): Promise<{ svg: string }> => {
+     const aiInstance = initializeAI();
     if (!aiInstance) throw new Error("AI not initialized");
-    
-    const fullPrompt = `You are an expert musicologist and SVG graphic designer. A user wants to see sheet music for the following musical idea: "${prompt}". Your task is to generate the complete, valid SVG code to render this sheet music. The SVG should have a white background, be ${width}px wide, and the height should be auto-adjusted. Do not include any explanations, just the raw <svg>...</svg> code.`;
+    const fullPrompt = `Generate an SVG image representing sheet music for the following prompt: "${prompt}". The SVG should be ${width}px wide, have a white background, and black notes. Use a library-agnostic SVG format. Return ONLY the SVG code as a string, starting with "<svg..." and ending with "</svg>".`;
     
     const response = await aiInstance.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: fullPrompt,
     });
     
-    return response.text?.trim().replace(/```svg|```/g, '') || '<svg><text>Error</text></svg>';
+    return { svg: response.text || '<svg width="500" height="100"><text x="10" y="50">Error generating SVG.</text></svg>' };
 };
 
 export const findAndAnalyzeSheetMusic = async (query: string): Promise<any> => {
     const aiInstance = initializeAI();
     if (!aiInstance) throw new Error("AI not initialized");
-    
-    const prompt = `First, use Google Search to find sheet music for "${query}". Then, analyze the most relevant image result. Extract the key, time signature, and the first few bars of the main melody. Return this information as a JSON object with keys: 'key', 'timeSignature', 'melodySnippet', and 'sourceUrl'.`;
+    const prompt = `First, use your search tools to find a publicly accessible image of the sheet music for "${query}". Then, analyze that image as a musicologist. Return ONLY a JSON object summarizing your findings with keys: "sourceUrl", "keySignature", "timeSignature", and "openingMelody" (a simple text description of the first few notes, e.g., "C4, E4, G4").`;
     
     const response = await aiInstance.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
-        config: {
-            tools: [{ googleSearch: {} }],
-            responseMimeType: "application/json"
-        },
+        config: { 
+            responseMimeType: "application/json",
+            tools: [{ googleSearch: {} }] 
+        }
     });
 
     try {
         return JSON.parse(response.text || '{}');
     } catch (e) {
-        return { error: "Failed to find or analyze sheet music online." };
+        return { error: 'Failed to find and analyze sheet music.' };
     }
 };
 
-export const generateSequencerPatternFromPrompt = async (prompt: string, pads: DrumPadConfig[]): Promise<{ grid: Record<number, boolean[]>, bpm: number }> => {
+export const generateSequencerPatternFromPrompt = async (prompt: string, pads: DrumPadConfig[]): Promise<{ grid: Record<number, boolean[]>; bpm: number }> => {
     const aiInstance = initializeAI();
     if (!aiInstance) throw new Error("AI not initialized");
 
-    const kitLayout = pads.map(p => `ID ${p.id}: ${p.label} (${p.soundType})`).join('\n');
-    
-    const fullPrompt = `You are an expert drum machine programmer. The user wants a 16-step drum pattern based on this prompt: "${prompt}".
-    The available drum kit layout is:
-    ${kitLayout}
+    const padDescriptions = pads.map(p => `Pad ${p.id} (${p.label}, type: ${p.soundType})`).join('\n');
 
-    Analyze the prompt and the kit. Create a musically appropriate 16-step pattern. Also, suggest an appropriate BPM for this style.
+    const fullPrompt = `
+    You are an expert drum machine programmer. Your task is to generate a 16-step drum pattern based on a user's prompt. You must also suggest an appropriate BPM.
+
+    Available Pads:
+    ${padDescriptions}
+
+    User Prompt: "${prompt}"
+
+    Instructions:
     Return ONLY a JSON object with two keys:
-    1. "bpm": a number (e.g., 90)
-    2. "grid": an object where keys are pad IDs (as strings) and values are arrays of 16 booleans representing the steps. Example: { "4": [true, false, false, false, ...], "5": [false, false, true, false, ...] }
+    1. "bpm": A number representing the suggested beats per minute.
+    2. "grid": An array of 20 arrays, where each inner array represents a pad (from ID 0 to 19) and contains 16 boolean values for each step. 'true' means the pad is triggered on that step.
+    
+    Example Response for a simple beat:
+    {
+      "bpm": 90,
+      "grid": [
+        [true, false, false, false, true, false, false, false, true, false, false, false, true, false, false, false], // Pad 0 (e.g., Kick)
+        [false, false, false, false, true, false, false, false, false, false, false, false, true, false, false, false], // Pad 1 (e.g., Snare)
+        ... (18 more arrays for the other pads)
+      ]
+    }
     `;
 
     const response = await aiInstance.models.generateContent({
@@ -334,18 +350,18 @@ export const generateSequencerPatternFromPrompt = async (prompt: string, pads: D
 
     try {
         const parsed = JSON.parse(response.text || '{}');
-        const grid: Record<number, boolean[]> = {};
-        if (parsed.grid) {
-            for (const padIdStr in parsed.grid) {
-                const padId = parseInt(padIdStr, 10);
-                if (!isNaN(padId) && Array.isArray(parsed.grid[padIdStr]) && parsed.grid[padIdStr].length === 16) {
-                    grid[padId] = parsed.grid[padIdStr];
-                }
-            }
+        const gridObject: Record<number, boolean[]> = {};
+        if (Array.isArray(parsed.grid)) {
+            parsed.grid.forEach((padSteps: boolean[], index: number) => {
+                gridObject[index] = padSteps;
+            });
         }
-        return { grid, bpm: parsed.bpm || 120 };
+        return {
+            bpm: parsed.bpm || 120,
+            grid: gridObject
+        };
     } catch (e) {
         console.error("Failed to parse sequencer pattern:", response.text);
-        throw new Error("AI returned invalid data for the sequencer pattern.");
+        throw new Error("AI returned invalid data for the pattern.");
     }
 };

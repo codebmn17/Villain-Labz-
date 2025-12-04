@@ -275,6 +275,35 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['prompt']
         }
     },
+     {
+        name: 'listSequencerPatterns',
+        description: 'Lists all available saved sequencer patterns that can be used to build a song arrangement.',
+        parameters: { type: Type.OBJECT, properties: {} }
+    },
+    {
+        name: 'createSongArrangement',
+        description: "Creates a full song structure by arranging saved sequencer patterns into sections like 'Intro', 'Verse', and 'Chorus'.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                name: { type: Type.STRING, description: 'The name for the new song arrangement.' },
+                sections: {
+                    type: Type.ARRAY,
+                    description: 'An array of section objects that define the song structure.',
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING, description: 'The name of the section (e.g., "Intro", "Verse 1", "Chorus").' },
+                            patternId: { type: Type.STRING, description: "The ID of the saved sequencer pattern to use for this section. Use 'listSequencerPatterns' to get available IDs." },
+                            repetitions: { type: Type.NUMBER, description: 'The number of times this pattern should repeat in the section.' }
+                        },
+                        required: ['name', 'patternId', 'repetitions']
+                    }
+                }
+            },
+            required: ['name', 'sections']
+        }
+    },
     // Code Lab Tools
     {
         name: 'updateCodeLab',

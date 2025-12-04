@@ -1,6 +1,4 @@
 
-
-
 import React from 'react';
 import { AppView } from '../types';
 import { MicIcon } from './icons/MicIcon';
@@ -12,6 +10,7 @@ import { StorageIcon } from './icons/StorageIcon';
 import { DrumIcon } from './icons/DrumIcon';
 import { YouTubeIcon } from './icons/YouTubeIcon';
 import { CodeIcon } from './icons/CodeIcon';
+import { FacebookIcon } from './icons/FacebookIcon';
 
 interface SideNavProps {
   currentView: AppView;
@@ -62,7 +61,8 @@ const SideNav: React.FC<SideNavProps> = ({ currentView, setCurrentView, isOnline
           <li><NavItem view={AppView.Chat} currentView={currentView} setCurrentView={setCurrentView} icon={<ChatIcon />} label="AI Chat" /></li>
           <li><NavItem view={AppView.ModelManager} currentView={currentView} setCurrentView={setCurrentView} icon={<CogIcon />} label="Models" /></li>
           <li><NavItem view={AppView.Storage} currentView={currentView} setCurrentView={setCurrentView} icon={<StorageIcon />} label="Storage" /></li>
-          <li><NavItem view={AppView.SpotifyConnect} currentView={currentView} setCurrentView={setCurrentView} icon={<SpotifyIcon />} label="Connect" /></li>
+          <li><NavItem view={AppView.SpotifyConnect} currentView={currentView} setCurrentView={setCurrentView} icon={<SpotifyIcon />} label="Spotify" /></li>
+          <li><NavItem view={AppView.FacebookConnect} currentView={currentView} setCurrentView={setCurrentView} icon={<FacebookIcon />} label="Facebook" /></li>
         </ul>
       </div>
       <div>

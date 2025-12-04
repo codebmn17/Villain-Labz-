@@ -5,12 +5,13 @@ import VoiceLab from './components/VoiceLab';
 import Studio from './components/Studio';
 import Chat from './components/Chat';
 import ModelManager from './components/ModelManager';
-import { AppView, ClonedVoice, AudioPlaylistItem, DrumPadConfig, AppController, AiModel } from './types';
+import { AppView, ClonedVoice, AudioPlaylistItem, DrumPadConfig, AppController, AiModel, SequencerPattern, SongArrangement, FacebookUser } from './types';
 import SpotifyConnect from './components/SpotifyConnect';
 import Storage from './components/Storage';
 import DrumMachine from './components/DrumMachine';
 import YouTubeConnect from './components/YouTubeConnect';
 import CodeLab from './components/CodeLab';
+import FacebookConnect from './components/FacebookConnect';
 import { getAllTracksFromDB } from './services/storageService';
 
 // Hardcore Rap / Sub-Woofer Configuration (5x4 Grid)
@@ -78,15 +79,25 @@ const App: React.FC = () => {
     }
     return grid;
   });
+  const [savedPatterns, setSavedPatterns] = useState<SequencerPattern[]>([]);
+  const [savedArrangements, setSavedArrangements] = useState<SongArrangement[]>([]);
 
   // Code Lab State
   const [codeLabContent, setCodeLabContent] = useState<string>(`// Welcome to the Polyglot Code Lab!
 // Use musicSDK.runCode(language, code) to generate audio.
-// Supported languages: 'alda', 'sonic-pi', 'tidalcycles', 'supercollider' (simulated)
-// Example:
-musicSDK.runCode('alda', 'piano: c d e f g a b > c');
+// Supported languages: 'faust' (real DSP!), 'alda' (notation), 'sonic-pi', 'tidalcycles' (advanced simulation)
+// Example (Real DSP):
+musicSDK.runCode('faust', \`
+  import("stdfaust.lib");
+  process = os.osc(220) * 0.2;
+\`);
 `);
   const [runCodeLabTrigger, setRunCodeLabTrigger] = useState(0);
+
+  // Facebook Connect State
+  const [isFacebookConnected, setIsFacebookConnected] = useState<boolean>(false);
+  const [facebookAppId, setFacebookAppId] = useState<string>('');
+  const [facebookUser, setFacebookUser] = useState<FacebookUser | null>(null);
 
   // Navigation Props (for passing data between views, e.g. YouTube -> Studio)
   const [navProps, setNavProps] = useState<any>(null);
@@ -114,6 +125,17 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
     if (savedCode) {
         setCodeLabContent(savedCode);
     }
+    
+    // Load patterns and arrangements
+    try {
+        const storedPatterns = localStorage.getItem('villain_sequencer_patterns');
+        if (storedPatterns) setSavedPatterns(JSON.parse(storedPatterns));
+        const storedArrangements = localStorage.getItem('villain_song_arrangements');
+        if (storedArrangements) setSavedArrangements(JSON.parse(storedArrangements));
+    } catch (e) {
+        console.error("Failed to load patterns or arrangements", e);
+    }
+
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -147,6 +169,11 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
     runCodeLabTrigger,
     bpm,
     sequencerGrid,
+    savedPatterns,
+    savedArrangements,
+    isFacebookConnected,
+    facebookAppId,
+    facebookUser,
     setCurrentView,
     setActiveModel,
     setClonedVoices,
@@ -166,6 +193,11 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
     setRunCodeLabTrigger,
     setBpm,
     setSequencerGrid,
+    setSavedPatterns,
+    setSavedArrangements,
+    setIsFacebookConnected,
+    setFacebookAppId,
+    setFacebookUser,
     navProps,
     setNavProps,
   };
@@ -198,6 +230,10 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
           setBpm={setBpm}
           sequencerGrid={sequencerGrid}
           setSequencerGrid={setSequencerGrid}
+          savedPatterns={savedPatterns}
+          setSavedPatterns={setSavedPatterns}
+          savedArrangements={savedArrangements}
+          setSavedArrangements={setSavedArrangements}
         />;
       case AppView.Chat:
         return <Chat appController={appController} />;
@@ -224,9 +260,11 @@ musicSDK.runCode('alda', 'piano: c d e f g a b > c');
           />
         );
       case AppView.Storage:
-        return <Storage generatedTracks={generatedTracks} setGeneratedTracks={setGeneratedTracks} />;
+        return <Storage appController={appController} />;
       case AppView.SpotifyConnect:
         return <SpotifyConnect />;
+      case AppView.FacebookConnect:
+        return <FacebookConnect appController={appController} />;
       case AppView.YouTube:
         return <YouTubeConnect onImport={(title, artist) => {
            setNavProps({ coverData: { title, artist } });

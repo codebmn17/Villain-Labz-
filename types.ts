@@ -10,6 +10,7 @@ export enum AppView {
   DrumMachine = 'DRUM_MACHINE',
   YouTube = 'YOUTUBE',
   CodeLab = 'CODE_LAB',
+  FacebookConnect = 'FACEBOOK_CONNECT',
 }
 
 export enum StudioMode {
@@ -87,12 +88,32 @@ export interface SequencerPattern {
   grid: Record<number, boolean[]>; // PadId -> [16 steps]
 }
 
+export interface SongSection {
+  id: string;
+  name: string;
+  patternId: string;
+  repetitions: number;
+}
+
+export interface SongArrangement {
+  id: string;
+  name: string;
+  sections: SongSection[];
+}
+
 export interface YouTubeResult {
   id: string;
   title: string;
   channel: string;
   thumbnail: string;
   url: string;
+}
+
+// Mock user type for Facebook Connect
+export interface FacebookUser {
+    id: string;
+    name: string;
+    pictureUrl: string;
 }
 
 export interface AppController {
@@ -117,6 +138,11 @@ export interface AppController {
   runCodeLabTrigger: number;
   bpm: number;
   sequencerGrid: Record<number, boolean[]>;
+  savedPatterns: SequencerPattern[];
+  savedArrangements: SongArrangement[];
+  isFacebookConnected: boolean;
+  facebookAppId: string;
+  facebookUser: FacebookUser | null;
   // Setters
   setCurrentView: (view: AppView) => void;
   setActiveModel: (model: AiModel) => void;
@@ -137,6 +163,11 @@ export interface AppController {
   setRunCodeLabTrigger: (updater: (prev: number) => number) => void;
   setBpm: (bpm: number) => void;
   setSequencerGrid: (grid: Record<number, boolean[]>) => void;
+  setSavedPatterns: (patterns: SequencerPattern[]) => void;
+  setSavedArrangements: (arrangements: SongArrangement[]) => void;
+  setIsFacebookConnected: (connected: boolean) => void;
+  setFacebookAppId: (appId: string) => void;
+  setFacebookUser: (user: FacebookUser | null) => void;
   // Navigation Props (Optional for data passing)
   navProps?: any;
   setNavProps?: (props: any) => void;
