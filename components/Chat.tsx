@@ -1,8 +1,9 @@
 
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { ChatMessage, AudioPlaylistItem, AppView, DrumPadConfig, AppController, ChatAttachment, AiModel } from '../types';
-import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic } from '../services/geminiService';
+import { sendMessageToAI, findSongLyrics, researchAndAdaptSong, generateSpeech, uploadFileToGemini, searchYouTubeVideos, analyzeYouTubeAudio, analyzeSheetMusicImage, generateSheetMusicSVG, findAndAnalyzeSheetMusic, performBassAnalysis } from '../services/geminiService';
 import { elevenLabsGenerate, addVoice } from '../services/elevenLabsService';
 import { Content, FunctionResponse, Part } from '@google/genai';
 import { PaperClipIcon } from './icons/PaperClipIcon';
@@ -332,6 +333,36 @@ const Chat: React.FC<ChatProps> = ({ appController }) => {
                     const errorMsg = e instanceof Error ? e.message : "Unknown analysis error";
                     result = { success: false, error: errorMsg };
                     executionResultText = `Failed to analyze audio: ${errorMsg}`;
+                }
+                break;
+             case 'analyzeBassCharacteristics':
+                try {
+                    let analysisArgs: any = {};
+                    if (args.youtubeUrl) {
+                        analysisArgs.youtubeUrl = args.youtubeUrl;
+                    } else if (args.audioAttachmentName) {
+                        const audioAtt = currentAttachments.find(a => a.name === args.audioAttachmentName);
+                        if (!audioAtt || (!audioAtt.data && !audioAtt.fileUri)) {
+                            throw new Error(`Audio attachment "${args.audioAttachmentName}" not found or is invalid.`);
+                        }
+                        analysisArgs.audioAttachment = audioAtt.data 
+                            ? { inlineData: { mimeType: audioAtt.mimeType, data: audioAtt.data } }
+                            : { fileData: { mimeType: audioAtt.mimeType, fileUri: audioAtt.fileUri! } };
+                    } else if (args.textDescription) {
+                        analysisArgs.textDescription = args.textDescription;
+                    } else {
+                         throw new Error("A reference (URL, attachment, or description) must be provided for bass analysis.");
+                    }
+                    
+                    addUIMessage('ai', `Analyzing bass characteristics...`);
+                    const analysis = await performBassAnalysis(analysisArgs);
+                    result = { success: true, analysis };
+                    executionResultText = `Bass analysis complete. Found dominant frequency at ${analysis.dominantFrequencyHz.toFixed(1)} Hz. Ready to program sounds.`;
+
+                } catch (e) {
+                    const errorMsg = e instanceof Error ? e.message : "Unknown bass analysis error";
+                    result = { success: false, error: errorMsg };
+                    executionResultText = `Failed bass analysis: ${errorMsg}`;
                 }
                 break;
              case 'readSheetMusic':

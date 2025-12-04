@@ -86,6 +86,19 @@ export const aiTools: FunctionDeclaration[] = [
             required: ['youtubeUrl']
         }
     },
+     // Bass Analysis Tool (The new "sense")
+    {
+        name: 'analyzeBassCharacteristics',
+        description: "The ultimate bass analysis tool. This gives the AI the ability to 'feel' bass. It analyzes a reference (YouTube URL, audio file, or text description) to extract deep sonic characteristics. It 'sees' an imaginary spectrogram and waveform to provide precise data for synthesis. Use this BEFORE programming any bass pads.",
+        parameters: {
+            type: Type.OBJECT,
+            properties: {
+                youtubeUrl: { type: Type.STRING, description: 'The URL of a YouTube video with the reference bass sound.' },
+                audioAttachmentName: { type: Type.STRING, description: 'The name of an audio file attached to the user message that contains the bass sound.' },
+                textDescription: { type: Type.STRING, description: 'A detailed text description of the desired bass sound (e.g., "a deep, rumbling 808 with a long tail and some distortion").' }
+            }
+        }
+    },
     // Music Theory & Composition Tools
     {
         name: 'readSheetMusic',

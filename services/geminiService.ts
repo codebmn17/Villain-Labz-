@@ -36,13 +36,15 @@ const getSystemInstruction = (model: AiModel): string => {
        - **EXECUTION TRIGGER**: You are FORBIDDEN from generating the audio until the user gives the specific command: "Generate Track" (or "Make it", "Do it", "Go").
        - **INFORM THE USER**: When a user initiates a music request, tell them: "I'm ready to plan your track. We need to finalize lyrics and style. Say 'Generate Track' when you are ready to build it."
     
-    3. **Autonomy (Code/UI)**: Unlike music generation, if a user wants a UI change or a coding task, execute 'executeJavaScript' IMMEDIATELY. Do not wait.
+    3. **Bass Synthesis Protocol (NEW SENSE)**: When a user requests a specific bass sound (e.g., 'deep 808', 'rumbling sub'), you MUST use the 'analyzeBassCharacteristics' tool first. This is your way of 'feeling' the bass. Use its detailed JSON output to inform your calls to 'configureDrumPad'. This is a critical step for accuracy.
     
-    4. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately in the next turn. Use 'executeJavaScript' to snapshot the app state via 'appController' to "take notes" on your work, see what went wrong, and ensure accuracy.
-    5. **Code Evolution**: You are encouraged to upgrade the app's runtime behavior. You can inject CSS, create DOM elements, or hijack the AudioContext to create new sound engines via 'executeJavaScript'.
+    4. **Autonomy (Code/UI)**: Unlike music generation, if a user wants a UI change or a coding task, execute 'executeJavaScript' IMMEDIATELY. Do not wait.
+    
+    5. **Self-Correction**: If your code or tool call fails, you will receive the error message. Analyze it and FIX IT immediately in the next turn. Use 'executeJavaScript' to snapshot the app state via 'appController' to "take notes" on your work, see what went wrong, and ensure accuracy.
+    6. **Code Evolution**: You are encouraged to upgrade the app's runtime behavior. You can inject CSS, create DOM elements, or hijack the AudioContext to create new sound engines via 'executeJavaScript'.
     
     KNOWLEDGE BASE:
-    - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning.
+    - **Audio Engineering**: Sub-bass (30-60Hz), EQ, Compression, 808 tuning, ADSR envelopes.
     - **Music History**: Hip-hop, Drill, Trap, Rock, Pop, Electronic.
     - **Music Theory**: You can read, write, and analyze sheet music.
     - **Healing Frequencies**: 432Hz, 528Hz, Binaural beats.
@@ -206,6 +208,51 @@ export const analyzeYouTubeAudio = async (youtubeUrl: string): Promise<any> => {
     } catch (error) {
         console.error("Error analyzing YouTube audio:", error);
         throw new Error("Failed to perform audio analysis.");
+    }
+};
+
+export const performBassAnalysis = async (args: { youtubeUrl?: string; audioAttachment?: Part; textDescription?: string; }): Promise<any> => {
+    try {
+        const aiInstance = initializeAI();
+        let promptParts: (string | Part)[] = [
+            `You are an expert audio engineer and synth programmer with perfect pitch and vision. Your task is to analyze a bass sound and provide its detailed sonic characteristics for synthesis.
+            Imagine you are looking at the sound's spectrogram and waveform.
+            Return a strict JSON object with the following keys:
+            - "dominantFrequencyHz" (number): The fundamental frequency of the bass note.
+            - "waveformSuggestion" (string enum: 'sine', 'square', 'triangle', 'sawtooth'): The best oscillator type to replicate this sound.
+            - "envelope" (object): An ADSR envelope with keys "attackSeconds" (number), "decaySeconds" (number, this is the 'tail'), "sustainLevel" (number, 0-1), "releaseSeconds" (number).
+            - "tuningNote" (string): The musical note and octave, e.g., "C#1".
+            - "harmonicContentDescription" (string): Describe the overtones, e.g., "Clean sub-bass with minimal harmonics" or "Gritty, distorted with rich upper harmonics".
+            - "visualAnalysis" (string): Describe the imaginary spectrogram and waveform, e.g., "Spectrogram shows strong energy concentrated at 45Hz with a slow decay. Waveform appears as a clipped sine wave."
+            Analyze the following reference:`
+        ];
+        
+        if (args.youtubeUrl) {
+            promptParts.push(`This YouTube video: ${args.youtubeUrl}. Use Google Search to find technical details about the track if necessary.`);
+        } else if (args.audioAttachment) {
+            promptParts.push("This attached audio file:");
+            promptParts.push(args.audioAttachment);
+        } else if (args.textDescription) {
+            promptParts.push(`This user description: "${args.textDescription}"`);
+        } else {
+            throw new Error("No reference provided for bass analysis.");
+        }
+
+        const response = await aiInstance.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: { parts: promptParts.map(p => typeof p === 'string' ? {text: p} : p) },
+            config: {
+                tools: [{ googleSearch: {} }],
+                responseMimeType: "application/json"
+            }
+        });
+
+        const text = response.text;
+        if (!text) throw new Error("No bass analysis returned from AI.");
+        return JSON.parse(text);
+    } catch (error) {
+        console.error("Error performing bass analysis:", error);
+        throw new Error("Failed to perform bass analysis.");
     }
 };
 
