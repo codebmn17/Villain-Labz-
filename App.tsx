@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect } from 'react';
 import SideNav from './components/SideNav';
 import VoiceLab from './components/VoiceLab';
@@ -44,14 +46,14 @@ const DEFAULT_PADS: DrumPadConfig[] = [
   // Row 3 (Keys A-F): STREET FX
   { id: 12, keyTrigger: 'A', label: 'Gun Cock', color: 'bg-blue-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 0.1, waveform: 'sawtooth', noise: true, distortion: false },
   { id: 13, keyTrigger: 'S', label: 'Gun Blast', color: 'bg-blue-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 1.5, waveform: 'sawtooth', noise: true, distortion: true },
-  { id: 14, keyTrigger: 'D', label: 'Cop Siren', color: 'bg-blue-700', soundType: 'fx', baseFrequency: 600, pitchDecay: 0, volumeDecay: 2.0, waveform: 'triangle', noise: false, distortion: true },
+  { id: 14, keyTrigger: 'D', label: 'Tape Stop', color: 'bg-blue-700', soundType: 'fx', baseFrequency: 1000, pitchDecay: 0.3, volumeDecay: 0.3, waveform: 'sine', noise: true, distortion: true },
   { id: 15, keyTrigger: 'F', label: 'Vinyl Scratch', color: 'bg-blue-600', soundType: 'fx', baseFrequency: 800, pitchDecay: 0.1, volumeDecay: 0.15, waveform: 'triangle', noise: true, distortion: false },
   
   // Row 4 (Keys Z-V): FULL LENGTH 4-BAR LOOPS
-  { id: 16, keyTrigger: 'Z', label: 'Chopper Loop', color: 'bg-red-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: false, distortion: true },
-  { id: 17, keyTrigger: 'X', label: 'Dirge Loop', color: 'bg-red-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'square', noise: false, distortion: true },
-  { id: 18, keyTrigger: 'C', label: 'Rock Loop', color: 'bg-red-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: true, distortion: true },
-  { id: 19, keyTrigger: 'V', label: 'Arp Loop', color: 'bg-red-600', soundType: 'fx', baseFrequency: 600, pitchDecay: 1.5, volumeDecay: 8, waveform: 'sine', noise: false, distortion: true },
+  { id: 16, keyTrigger: 'Z', label: 'Chopper Loop', color: 'bg-red-900', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: false, distortion: false },
+  { id: 17, keyTrigger: 'X', label: 'Dirge Loop', color: 'bg-red-800', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'square', noise: false, distortion: false },
+  { id: 18, keyTrigger: 'C', label: 'Rock Loop', color: 'bg-red-700', soundType: 'fx', baseFrequency: 0, pitchDecay: 0, volumeDecay: 8, waveform: 'sawtooth', noise: true, distortion: false },
+  { id: 19, keyTrigger: 'V', label: 'Still Dre Loop', color: 'bg-red-600', soundType: 'fx', baseFrequency: 600, pitchDecay: 1.5, volumeDecay: 8, waveform: 'sine', noise: false, distortion: false },
 ];
 
 const App: React.FC = () => {

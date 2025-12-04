@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { DrumPadConfig, AudioPlaylistItem, DrumKit, SequencerPattern } from '../types';
 import { VolumeIcon } from './icons/VolumeIcon';
@@ -545,19 +547,25 @@ const DrumMachine: React.FC<DrumMachineProps> = ({
 
     gain.connect(destination);
 
-    osc1.type = 'sawtooth';
-    osc2.type = 'square';
+    if (type === 'pluck') {
+        osc1.type = 'triangle';
+        osc2.type = 'sine';
+    } else { // lead
+        osc1.type = 'sawtooth';
+        osc2.type = 'square';
+    }
+    
     osc1.frequency.setValueAtTime(safeFreq, time);
-    osc2.frequency.setValueAtTime(safeFreq * 1.01, time); // Detune
+    osc2.frequency.setValueAtTime(safeFreq * 1.005, time); // Subtle Detune
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
     
-    const startFilterFreq = safeFreq * 4;
+    const startFilterFreq = safeFreq * 3;
     const endFilterFreq = safeFreq; 
 
     filter.frequency.setValueAtTime(startFilterFreq > 1 ? startFilterFreq : 1, time);
-    filter.frequency.exponentialRampToValueAtTime(endFilterFreq > 0.01 ? endFilterFreq : 0.01, time + 0.2);
+    filter.frequency.exponentialRampToValueAtTime(endFilterFreq > 0.01 ? endFilterFreq : 0.01, time + (duration * 0.8));
 
     osc1.connect(filter);
     osc2.connect(filter);
@@ -628,30 +636,40 @@ const DrumMachine: React.FC<DrumMachineProps> = ({
       }
   };
 
-  const playSiren = (ctx: AudioContext, dest: AudioNode, time: number) => {
-      const osc1 = ctx.createOscillator();
-      const osc2 = ctx.createOscillator();
-      osc1.type = 'sawtooth';
-      osc2.type = 'square';
-      
-      const gain = ctx.createGain();
-      
-      const now = time;
-      [osc1, osc2].forEach(osc => {
-          osc.frequency.setValueAtTime(600, now);
-          osc.frequency.linearRampToValueAtTime(1200, now + 0.5);
-          osc.frequency.linearRampToValueAtTime(600, now + 1.0);
-          osc.frequency.linearRampToValueAtTime(1200, now + 1.5);
-          osc.frequency.linearRampToValueAtTime(600, now + 2.0);
-          osc.connect(gain);
-          osc.start(now);
-          osc.stop(now + 2.0);
-      });
+  const playTapeStop = (ctx: AudioContext, dest: AudioNode, time: number) => {
+    const stopTime = 0.5; // seconds
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
 
-      gain.gain.setValueAtTime(0.3, now);
-      gain.gain.linearRampToValueAtTime(0.3, now + 1.8);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 2.0);
-      gain.connect(dest);
+    osc.type = 'sawtooth';
+    osc.connect(gain);
+    gain.connect(dest);
+
+    osc.frequency.setValueAtTime(880, time); // A5 note
+    osc.frequency.exponentialRampToValueAtTime(0.01, time + stopTime);
+
+    gain.gain.setValueAtTime(0.5, time);
+    gain.gain.linearRampToValueAtTime(0, time + stopTime + 0.05);
+
+    osc.start(time);
+    osc.stop(time + stopTime + 0.1);
+
+    if (noiseBufferRef.current) {
+        const noise = ctx.createBufferSource();
+        noise.buffer = noiseBufferRef.current;
+        const noiseGain = ctx.createGain();
+
+        noise.playbackRate.setValueAtTime(1, time);
+        noise.playbackRate.exponentialRampToValueAtTime(0.01, time + stopTime);
+        
+        noiseGain.gain.setValueAtTime(0.1, time);
+        noiseGain.gain.linearRampToValueAtTime(0, time + stopTime + 0.05);
+        
+        noise.connect(noiseGain);
+        noiseGain.connect(dest);
+        noise.start(time);
+        noise.stop(time + stopTime + 0.1);
+    }
   };
 
   const playScratch = (ctx: AudioContext, dest: AudioNode, time: number) => {
@@ -691,12 +709,8 @@ const DrumMachine: React.FC<DrumMachineProps> = ({
       comp.threshold.value = -24;
       comp.ratio.value = 12;
       
-      const shaper = ctx.createWaveShaper();
-      shaper.curve = makeDistortionCurve(20); 
-      
       loopGain.connect(comp);
-      comp.connect(shaper);
-      shaper.connect(dest);
+      comp.connect(dest);
 
       const playHeavySynth = (startTime: number, freq: number, dur: number) => {
            const osc = ctx.createOscillator();
@@ -749,11 +763,21 @@ const DrumMachine: React.FC<DrumMachineProps> = ({
           }
           playHeavySynth(t, 144, bar*2);
       }
-      else if (padId === 19) { // Arp
-          const arp = [288, 342, 384, 432];
-          playTrapKick(ctx, loopGain, t, 50, 2.0, true, 'sine');
-          playTrapKick(ctx, loopGain, t+beat*2, 50, 2.0, true, 'sine');
-          for(let i=0; i<16; i++) playSynthNote(ctx, arp[i%4], t+i*beat/2, 0.2, 'pluck', loopGain);
+      else if (padId === 19) { // Still Dre Loop
+          const noteDuration = beat / 4; // 16th notes
+          const riffNotes = [110.00, 130.81, 164.81, 130.81]; // A2, C3, E3, C3
+          
+          // Loop for 4 bars (16 beats, 64 16th notes)
+          for (let i = 0; i < 64; i++) {
+              const noteFreq = riffNotes[i % 4];
+              const startTime = t + (i * noteDuration);
+              playSynthNote(ctx, noteFreq, startTime, noteDuration * 0.9, 'pluck', loopGain);
+          }
+          // Add a simple kick/snare pattern
+          for(let i = 0; i < 16; i++) {
+              if(i % 4 === 0) playTrapKick(ctx, loopGain, t + i * beat, 60, 0.5, false, 'sine');
+              if(i % 4 === 2) playTrapSnare(ctx, loopGain, t + i * beat, 200, 0.2, false);
+          }
       }
   }
 
@@ -825,13 +849,13 @@ const DrumMachine: React.FC<DrumMachineProps> = ({
       else if (pad.soundType === 'fx') {
             if (pad.id === 12) playGunCock(ctx, master, time);
             else if (pad.id === 13) playGunBlast(ctx, master, time);
-            else if (pad.id === 14) playSiren(ctx, master, time);
+            else if (pad.id === 14) playTapeStop(ctx, master, time);
             else if (pad.id === 15) playScratch(ctx, master, time);
             else {
                  const label = pad.label.toLowerCase();
                  if (label.includes('gun') && label.includes('cock')) playGunCock(ctx, master, time);
                  else if (label.includes('blast')) playGunBlast(ctx, master, time);
-                 else if (label.includes('siren')) playSiren(ctx, master, time);
+                 else if (label.includes('tape stop')) playTapeStop(ctx, master, time);
                  else if (label.includes('scratch')) playScratch(ctx, master, time);
                  else playTrapKick(ctx, master, time, 100, 0.2, true, 'sawtooth');
             }
